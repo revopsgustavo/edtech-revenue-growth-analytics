@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+.streamlit/
+data/processed/*.csv
+data/database/*.db
+*.log

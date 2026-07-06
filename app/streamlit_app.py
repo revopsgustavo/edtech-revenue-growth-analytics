@@ -1,0 +1,388 @@
+import sys
+from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT / "src"))
+from metrics import summarize_channel_performance
+from utils import PROCESSED, brl, br_multiple, br_number, br_pct, safe_div
+
+st.set_page_config(page_title="EdTech Revenue Growth Analytics", layout="wide")
+st.markdown(
+    """
+    <style>
+    [data-testid="stMetricValue"] {
+        font-size: clamp(1.25rem, 1.7vw, 1.8rem);
+        white-space: normal;
+        overflow: visible;
+        line-height: 1.15;
+    }
+    [data-testid="stMetricLabel"] {
+        white-space: normal;
+    }
+    .block-container {
+        padding-top: 3rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+st.title("EdTech Revenue Growth Analytics")
+st.caption("Dashboard executivo com dados sintéticos para Marketing, Growth, Comercial, CX, Produto e Dados.")
+
+
+@st.cache_data
+def load_data():
+    return {file.stem: pd.read_csv(file) for file in PROCESSED.glob("*.csv")}
+
+
+def chart(fig, height=420):
+    fig.update_layout(height=height, margin=dict(l=20, r=20, t=58, b=36), legend_title_text="")
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def kpi_card(container, label, value):
+    container.markdown(
+        f"""
+        <div style="border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:14px 16px; min-height:92px; background:rgba(255,255,255,.03);">
+            <div style="font-size:.86rem; opacity:.82; margin-bottom:8px;">{label}</div>
+            <div style="font-size:clamp(1.25rem,1.65vw,1.75rem); font-weight:650; line-height:1.15; overflow-wrap:anywhere;">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def value_fmt(metric, value):
+    if metric in {"net_revenue", "spend", "cac", "cpl", "expansion_revenue"}:
+        return brl(value)
+    if metric in {"roi", "roas", "activation_rate", "retention_proxy"}:
+        return br_pct(value)
+    if metric == "ltv_cac":
+        return br_multiple(value)
+    return br_number(value, 2)
+
+
+def format_table(df, money_cols=None, pct_cols=None, number_cols=None, rename=None):
+    view = df.copy()
+    for col in money_cols or []:
+        if col in view.columns:
+            view[col] = view[col].map(brl)
+    for col in pct_cols or []:
+        if col in view.columns:
+            view[col] = view[col].map(br_pct)
+    for col in number_cols or []:
+        if col in view.columns:
+            view[col] = view[col].map(lambda value: br_number(value, 0))
+    if rename:
+        view = view.rename(columns=rename)
+    return view
+
+
+data = load_data()
+history = data["performance_history"]
+closing = data["monthly_closing"]
+gaps = data.get("consultant_gap_log", pd.DataFrame())
+actions = data.get("action_tracker", pd.DataFrame())
+experiments = data.get("experiment_recommendations", pd.DataFrame())
+leads = data["leads"]
+funnel = data["funnel_events"]
+campaigns = data["campaigns"]
+events = data["free_class_events"]
+content = data["content_events"]
+students = data["students"]
+activation = data["student_activation"]
+engagement = data["learning_engagement"]
+expansion = data["expansion_opportunities"]
+
+page = st.sidebar.radio(
+    "Página",
+    [
+        "Visão executiva",
+        "Diagnóstico do funil",
+        "Performance por canal",
+        "ROI de campanhas",
+        "Creators e aulas gratuitas",
+        "Insights de segmentação",
+        "Priorização de leads",
+        "Produto e retenção",
+        "Histórico e fechamento mensal",
+        "Consultor IA",
+    ],
+)
+
+if page == "Visão executiva":
+    total_revenue = history.net_revenue.sum()
+    total_spend = history.spend.sum()
+    enrollments = history.enrollments.sum()
+    cac = safe_div(total_spend, enrollments)
+    ltv_cac = safe_div(history.expected_ltv.sum() / max(enrollments, 1), cac)
+
+    cols = st.columns(4)
+    kpi_card(cols[0], "Receita líquida", brl(total_revenue))
+    kpi_card(cols[1], "Investimento", brl(total_spend))
+    kpi_card(cols[2], "CAC", brl(cac))
+    kpi_card(cols[3], "LTV/CAC", br_multiple(ltv_cac, 2))
+    cols = st.columns(4)
+    kpi_card(cols[0], "Payback", f"{br_number(history.payback_months.replace([float('inf')], 0).mean(), 1)} meses")
+    kpi_card(cols[1], "Lead para matrícula", br_pct(safe_div(enrollments, history.leads.sum())))
+    kpi_card(cols[2], "ROI", br_pct(safe_div(total_revenue - total_spend, total_spend)))
+    kpi_card(cols[3], "Atingimento da receita", br_pct(safe_div(closing.net_revenue_actual.sum(), closing.net_revenue_target.sum())))
+
+    st.subheader("Alertas e recomendações")
+    c1, c2 = st.columns(2)
+    with c1:
+        for item in gaps.head(3).evidence if not gaps.empty else []:
+            st.warning(item)
+    with c2:
+        st.success("Priorizar canais com LTV/CAC superior.")
+        st.success("Aplicar SLA P1 e cadência CRM.")
+        st.success("Otimizar show-up de aulas gratuitas.")
+    chart(px.line(closing, x="month", y=["net_revenue_actual", "net_revenue_target"], title="Receita: meta vs realizado"))
+
+elif page == "Diagnóstico do funil":
+    stages = {
+        "Lead": funnel.lead_date.notna().sum(),
+        "Inscrição aula": funnel.free_class_registration_date.notna().sum(),
+        "Presença": funnel.attendance_date.notna().sum(),
+        "Oferta": funnel.offer_date.notna().sum(),
+        "MQL": funnel.mql_date.notna().sum(),
+        "Contato": funnel.sales_contact_date.notna().sum(),
+        "Trial agendado": funnel.trial_class_date.notna().sum(),
+        "Matrícula": funnel.enrollment_date.notna().sum(),
+        "Ativação": funnel.activation_date.notna().sum(),
+    }
+    df = pd.DataFrame({"stage": list(stages.keys()), "count": list(stages.values())})
+    df["conversion"] = df["count"] / df["count"].shift(1).fillna(df["count"])
+    df["dropoff"] = 1 - df["conversion"]
+    cols = st.columns(4)
+    kpi_card(cols[0], "Leads", br_number(df.loc[df.stage == "Lead", "count"].iloc[0], 0))
+    kpi_card(cols[1], "Matrículas", br_number(df.loc[df.stage == "Matrícula", "count"].iloc[0], 0))
+    kpi_card(cols[2], "Lead para matrícula", br_pct(safe_div(df.loc[df.stage == "Matrícula", "count"].iloc[0], df.loc[df.stage == "Lead", "count"].iloc[0])))
+    kpi_card(cols[3], "Ativação pós-matrícula", br_pct(safe_div(df.loc[df.stage == "Ativação", "count"].iloc[0], df.loc[df.stage == "Matrícula", "count"].iloc[0])))
+    chart(px.funnel(df, x="count", y="stage", title="Funil principal"))
+    st.dataframe(
+        format_table(
+            df,
+            pct_cols=["conversion", "dropoff"],
+            number_cols=["count"],
+            rename={"stage": "Etapa", "count": "Volume", "conversion": "Conversão", "dropoff": "Drop-off"},
+        ),
+        use_container_width=True,
+    )
+    st.info("Gargalos prioritários: inscrição para presença em aula gratuita e trial agendado para trial assistido.")
+
+elif page == "Performance por canal":
+    channels = summarize_channel_performance(history)
+    best_ltv = channels.sort_values("ltv_cac", ascending=False).iloc[0]
+    best_revenue = channels.sort_values("net_revenue", ascending=False).iloc[0]
+    low_cac = channels[channels.enrollments > 0].sort_values("cac", ascending=True).iloc[0]
+    cols = st.columns(3)
+    kpi_card(cols[0], "Maior receita", f"{best_revenue.channel}<br>{brl(best_revenue.net_revenue)}")
+    kpi_card(cols[1], "Melhor LTV/CAC", f"{best_ltv.channel}<br>{br_multiple(best_ltv.ltv_cac, 2)}")
+    kpi_card(cols[2], "Menor CAC", f"{low_cac.channel}<br>{brl(low_cac.cac)}")
+    chart(px.bar(channels, x="channel", y="net_revenue", color="ltv_cac", title="Receita e LTV/CAC por canal"))
+    chart(px.scatter(channels, x="cac", y="net_revenue", size="leads", color="channel", title="CAC vs receita por canal"))
+    st.dataframe(
+        format_table(
+            channels.sort_values("ltv_cac", ascending=False),
+            money_cols=["spend", "net_revenue", "cac", "cpl"],
+            number_cols=["leads", "enrollments"],
+            rename={"channel": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
+        ),
+        use_container_width=True,
+    )
+
+elif page == "ROI de campanhas":
+    camp = history.groupby("campaign_id", as_index=False).agg(
+        spend=("spend", "sum"),
+        leads=("leads", "sum"),
+        enrollments=("enrollments", "sum"),
+        net_revenue=("net_revenue", "sum"),
+    )
+    camp = camp.merge(campaigns[["campaign_id", "campaign_name", "channel"]], on="campaign_id", how="left")
+    camp["cpl"] = camp.spend / camp.leads.replace(0, pd.NA)
+    camp["cac"] = camp.spend / camp.enrollments.replace(0, pd.NA)
+    camp["roi"] = (camp.net_revenue - camp.spend) / camp.spend.replace(0, pd.NA)
+    camp["roas"] = camp.net_revenue / camp.spend.replace(0, pd.NA)
+    cpl_threshold = camp["cpl"].quantile(0.35)
+    cac_threshold = camp["cac"].quantile(0.65)
+    bad_quality = camp[(camp["cpl"] <= cpl_threshold) & (camp["cac"] >= cac_threshold)].sort_values("cac", ascending=False)
+    scale_gap = camp[camp.enrollments > 0].sort_values(["cac", "spend"]).head(10)
+    cols = st.columns(3)
+    kpi_card(cols[0], "Campanhas avaliadas", br_number(len(camp), 0))
+    kpi_card(cols[1], "Receita total", brl(camp.net_revenue.sum()))
+    kpi_card(cols[2], "ROI médio", br_pct(camp.roi.mean()))
+    chart(px.scatter(camp, x="spend", y="net_revenue", color="channel", size="leads", hover_name="campaign_name", title="Investimento vs receita por campanha"))
+    table_cols = ["campaign_id", "campaign_name", "channel", "spend", "leads", "enrollments", "net_revenue", "cpl", "cac", "roi", "roas"]
+    rename_campaign = {"campaign_id": "ID", "campaign_name": "Campanha", "channel": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
+    st.subheader("Campanhas com CPL bom e CAC ruim")
+    st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
+    st.subheader("Campanhas com CAC bom e escala baixa")
+    st.dataframe(format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
+
+elif page == "Creators e aulas gratuitas":
+    content["engagement_rate"] = (content.likes + content.comments + content.shares) / content.views.replace(0, pd.NA)
+    content["click_rate"] = content.clicks / content.views.replace(0, pd.NA)
+    creator_summary = content.groupby("creator_id", as_index=False).agg(leads=("leads_generated", "sum"), views=("views", "sum"), engagement_rate=("engagement_rate", "mean"), click_rate=("click_rate", "mean")).sort_values("leads", ascending=False).head(12)
+    events_view = events.assign(
+        revenue_per_attendee=events.revenue_generated / events.attendees.replace(0, pd.NA),
+        event_conversion=events.enrollments / events.attendees.replace(0, pd.NA),
+    )
+    cols = st.columns(4)
+    kpi_card(cols[0], "Leads por creators", br_number(content.leads_generated.sum(), 0))
+    kpi_card(cols[1], "Show-up médio", br_pct(events.show_up_rate.mean()))
+    kpi_card(cols[2], "Receita de eventos", brl(events.revenue_generated.sum()))
+    kpi_card(cols[3], "Receita por participante", brl(events_view.revenue_per_attendee.mean()))
+    chart(px.bar(creator_summary, x="creator_id", y="leads", title="Creators por leads"))
+    chart(px.bar(events, x="event_name", y="show_up_rate", color="revenue_generated", title="Show-up e receita por aula gratuita"))
+    st.subheader("Performance de creators")
+    st.dataframe(format_table(creator_summary, pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_id": "Creator", "leads": "Leads", "views": "Views", "engagement_rate": "Engajamento", "click_rate": "Click rate"}), use_container_width=True)
+    st.subheader("Performance de aulas gratuitas")
+    st.dataframe(format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Show-up", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"}), use_container_width=True)
+
+elif page == "Insights de segmentação":
+    seg = leads.merge(funnel[["lead_id", "enrollment_date"]], on="lead_id", how="left")
+    lang = seg.groupby("language_interest", as_index=False).agg(leads=("lead_id", "count"), enrollments=("enrollment_date", lambda s: s.notna().sum()))
+    lang["conversion"] = lang.enrollments / lang.leads
+    goal = seg.groupby("stated_goal", as_index=False).agg(leads=("lead_id", "count"), enrollments=("enrollment_date", lambda s: s.notna().sum()))
+    goal["conversion"] = goal.enrollments / goal.leads
+    chart(px.bar(lang, x="language_interest", y="conversion", title="Conversão por idioma"))
+    chart(px.bar(goal, x="stated_goal", y="conversion", title="Conversão por objetivo declarado"))
+    st.info("Segmentos com maior intenção e baixo investimento devem entrar no próximo ciclo de priorização.")
+
+elif page == "Priorização de leads":
+    dist = leads.priority_tier.value_counts().reset_index()
+    dist.columns = ["tier", "leads"]
+    p1 = leads[leads.priority_tier == "P1"]
+    cols = st.columns(4)
+    kpi_card(cols[0], "Leads P1", br_number(len(p1), 0))
+    kpi_card(cols[1], "SLA mediano P1", f"{br_number(p1.first_response_minutes.median(), 0)} min")
+    kpi_card(cols[2], "Score médio", br_number(leads.lead_score.mean(), 1))
+    kpi_card(cols[3], "Leads com responsável", br_pct(leads.assigned_to_sales.notna().mean()))
+    chart(px.pie(dist, names="tier", values="leads", title="Distribuição de prioridade"))
+    tier = leads.merge(funnel[["lead_id", "enrollment_date"]], on="lead_id", how="left").groupby("priority_tier", as_index=False).agg(
+        leads=("lead_id", "count"),
+        conversion=("enrollment_date", lambda s: s.notna().mean()),
+        sla=("first_response_minutes", "median"),
+    )
+    st.dataframe(format_table(tier, pct_cols=["conversion"], number_cols=["leads", "sla"], rename={"priority_tier": "Tier", "leads": "Leads", "conversion": "Conversão", "sla": "SLA mediano (min)"}), use_container_width=True)
+    st.success("Recomendação: P1 deve ter SLA de 15 minutos, roteamento automático e cadência WhatsApp.")
+
+elif page == "Produto e retenção":
+    cols = st.columns(4)
+    kpi_card(cols[0], "Activation rate", br_pct((activation.activation_status == "activated").mean()))
+    kpi_card(cols[1], "Tempo até primeira aula", f"{br_number(activation.days_to_first_class.mean(), 1)} dias")
+    kpi_card(cols[2], "Engagement score", br_number(engagement.engagement_score.mean(), 1))
+    kpi_card(cols[3], "Churn risk", br_number(students.churn_risk_score.mean(), 1))
+    chart(px.histogram(activation, x="classes_watched_7d", title="Aulas assistidas em 7 dias"))
+    chart(px.scatter(expansion, x="upsell_score", y="expected_expansion_revenue", color="current_language", title="Oportunidade de expansão"))
+
+elif page == "Histórico e fechamento mensal":
+    months = sorted(closing.month.unique())
+    month = st.sidebar.selectbox("Selecionar mês", months, index=len(months) - 1)
+    metric = st.sidebar.selectbox("Métrica principal", ["net_revenue", "spend", "leads", "enrollments", "cac", "cpl", "roi", "roas", "ltv_cac", "activation_rate", "engagement_score", "retention_proxy", "expansion_revenue"])
+    just = data["variation_justifications"]
+    area_filter = st.sidebar.multiselect("Área", sorted(just.business_area.dropna().unique()))
+    problem_filter = st.sidebar.multiselect("Tipo de problema", sorted(just.problem_type.dropna().unique()))
+    team_filter = st.sidebar.multiselect("Time responsável", sorted(just.responsible_team.dropna().unique()))
+    variation_view = just.copy()
+    if area_filter:
+        variation_view = variation_view[variation_view.business_area.isin(area_filter)]
+    if problem_filter:
+        variation_view = variation_view[variation_view.problem_type.isin(problem_filter)]
+    if team_filter:
+        variation_view = variation_view[variation_view.responsible_team.isin(team_filter)]
+
+    row = closing[closing.month == month].iloc[0]
+    c = st.columns(4)
+    kpi_card(c[0], "Meta do mês", value_fmt(metric, row[f"{metric}_target"]))
+    kpi_card(c[1], "Realizado", value_fmt(metric, row[f"{metric}_actual"]))
+    kpi_card(c[2], "Variação abs.", value_fmt(metric, row[f"{metric}_variation_abs"]))
+    kpi_card(c[3], "Variação %", br_pct(row[f"{metric}_variation_pct"]))
+    st.caption(f"Status: {row.target_status}")
+    st.info(f"Em {month}, {metric} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}, variação de {br_pct(row[f'{metric}_variation_pct'])}. Os dados sugerem que o principal driver foi {row.main_variation_driver}.")
+
+    current_variations = variation_view[variation_view.month == month]
+    if current_variations.empty:
+        current_variations = variation_view.head(1)
+    if not current_variations.empty:
+        main_variation = current_variations.iloc[current_variations["target_variation_pct"].abs().argmax()]
+        d = st.columns(4)
+        kpi_card(d[0], "Área associada", main_variation.business_area)
+        kpi_card(d[1], "Tipo de problema", main_variation.problem_type)
+        kpi_card(d[2], "Responsável", main_variation.decision_owner)
+        kpi_card(d[3], "Ritual sugerido", main_variation.recommended_review_meeting)
+
+    st.subheader("Justificativa de negócio")
+    show = variation_view[(variation_view.month == month) & (variation_view.metric == metric)]
+    if show.empty:
+        show = variation_view[variation_view.month == month].head(1)
+    st.dataframe(show, use_container_width=True)
+    chart(px.line(closing, x="month", y=[f"{metric}_actual", f"{metric}_target"], title="Métrica ao longo dos meses"))
+    chart(px.bar(closing, x="month", y=f"{metric}_variation_pct", title="Variação percentual contra meta"))
+    chart(px.bar(closing, x="month", y="revenue_mom_variation_pct", title="Variação de receita contra mês anterior"))
+    chart(px.line(closing, x="month", y=["cac_actual", "net_revenue_actual"], title="CAC e receita ao longo do tempo"))
+
+    st.subheader("Variações por área e tipo de problema")
+    area_summary = variation_view.groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
+    problem_summary = variation_view.groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
+    g1, g2 = st.columns(2)
+    g1.plotly_chart(px.bar(area_summary, x="business_area", y="variations", title="Variações por área"), use_container_width=True)
+    g2.plotly_chart(px.bar(problem_summary, x="problem_type", y="problems", title="Problemas por tipo"), use_container_width=True)
+    st.subheader("Log de variações por área")
+    st.dataframe(variation_view[["month", "metric", "business_area", "problem_type", "actual_value", "target_value", "target_variation_pct", "detected_driver", "analyst_justification", "decision_owner", "follow_up_metric"]], use_container_width=True)
+
+elif page == "Consultor IA":
+    st.subheader("Gaps priorizados")
+    st.dataframe(gaps, use_container_width=True)
+
+    st.subheader("Plano de ação")
+    if actions.empty:
+        st.info("Execute `python src/action_tracker.py` para gerar o plano de ações.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total de ações", len(actions))
+        c2.metric("Ações críticas", int((actions.priority == "critical").sum()))
+        c3.metric("Responsáveis", actions.owner.nunique())
+        area_filter = st.multiselect("Filtrar área", sorted(actions.business_area.dropna().unique()))
+        owner_filter = st.multiselect("Filtrar responsável", sorted(actions.owner.dropna().unique()))
+        status_filter = st.multiselect("Filtrar status", sorted(actions.status.dropna().unique()))
+        priority_filter = st.multiselect("Filtrar prioridade", sorted(actions.priority.dropna().unique()))
+        action_view = actions.copy()
+        if area_filter:
+            action_view = action_view[action_view.business_area.isin(area_filter)]
+        if owner_filter:
+            action_view = action_view[action_view.owner.isin(owner_filter)]
+        if status_filter:
+            action_view = action_view[action_view.status.isin(status_filter)]
+        if priority_filter:
+            action_view = action_view[action_view.priority.isin(priority_filter)]
+        a1, a2, a3 = st.columns(3)
+        a1.plotly_chart(px.bar(actions, x="business_area", title="Ações por área"), use_container_width=True)
+        a2.plotly_chart(px.histogram(actions, x="priority", title="Ações por prioridade"), use_container_width=True)
+        a3.plotly_chart(px.histogram(actions, x="status", title="Ações por status"), use_container_width=True)
+        st.dataframe(action_view, use_container_width=True)
+
+    st.subheader("Recomendações de experimentos")
+    if experiments.empty:
+        st.info("Execute `python src/experiment_recommendations.py` para gerar recomendações de experimentos.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Experimentos propostos", len(experiments))
+        c2.metric("Tipos de teste", experiments.experiment_type.nunique())
+        c3.metric("Responsáveis", experiments.owner.nunique())
+        e1, e2, e3 = st.columns(3)
+        e1.plotly_chart(px.bar(experiments, x="business_area", title="Experimentos por área"), use_container_width=True)
+        e2.plotly_chart(px.histogram(experiments, x="experiment_type", title="Experimentos por tipo"), use_container_width=True)
+        e3.plotly_chart(px.histogram(experiments, x="status", title="Experimentos por status"), use_container_width=True)
+        st.dataframe(experiments[["experiment_id", "business_area", "experiment_type", "hypothesis", "primary_metric", "minimum_success_criteria", "risk", "owner", "status"]], use_container_width=True)
+
+    st.subheader("Análise de IA rule-based")
+    path = ROOT / "docs" / "ai_consultant_analysis.md"
+    st.markdown(path.read_text(encoding="utf-8") if path.exists() else "Execute `python src/ai_consultant.py`.")
