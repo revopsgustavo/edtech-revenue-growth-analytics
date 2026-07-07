@@ -9,9 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCAL_DEPS = ROOT.parent / ".streamlit_deps"
 
 use_local_deps = os.environ.get("FORCE_LOCAL_STREAMLIT_DEPS") == "1"
-streamlit_available = importlib.util.find_spec("streamlit") is not None
+streamlit_available = (
+    importlib.util.find_spec("streamlit") is not None
+    and importlib.util.find_spec("streamlit.__main__") is not None
+)
 
-if LOCAL_DEPS.exists() and (use_local_deps or not streamlit_available):
+if LOCAL_DEPS.exists():
     sys.path.insert(0, str(LOCAL_DEPS))
 
 port = os.environ.get("STREAMLIT_PORT", "8501")
