@@ -7,7 +7,16 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / "src"))
+from action_tracker import generate_action_tracker
+from ai_consultant import generate_analysis
+from consultant_gap_finder import find_gaps
+from data_quality import run_quality_checks
+from experiment_recommendations import generate_experiments
+from generate_data import main as generate_synthetic_data
+from lead_scoring import apply_lead_scoring
 from metrics import summarize_channel_performance
+from monthly_closing import main as generate_monthly_closing
+from reports import generate_reports
 from utils import PROCESSED, brl, br_multiple, br_number, br_pct, safe_div
 
 st.set_page_config(page_title="EdTech Revenue Growth Analytics", layout="wide")
@@ -36,6 +45,34 @@ st.caption("Dashboard executivo com dados sintéticos para Marketing, Growth, Co
 
 @st.cache_data
 def load_data():
+    required_files = {
+        "performance_history.csv",
+        "monthly_closing.csv",
+        "consultant_gap_log.csv",
+        "action_tracker.csv",
+        "experiment_recommendations.csv",
+        "variation_justifications.csv",
+        "leads.csv",
+        "funnel_events.csv",
+        "campaigns.csv",
+        "free_class_events.csv",
+        "content_events.csv",
+        "students.csv",
+        "student_activation.csv",
+        "learning_engagement.csv",
+        "expansion_opportunities.csv",
+    }
+    missing_files = [name for name in required_files if not (PROCESSED / name).exists()]
+    if missing_files:
+        generate_synthetic_data()
+        apply_lead_scoring()
+        generate_monthly_closing()
+        run_quality_checks()
+        find_gaps()
+        generate_action_tracker()
+        generate_experiments()
+        generate_analysis()
+        generate_reports()
     return {file.stem: pd.read_csv(file) for file in PROCESSED.glob("*.csv")}
 
 
