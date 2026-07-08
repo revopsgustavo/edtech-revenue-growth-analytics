@@ -301,6 +301,14 @@ TERM_TRANSLATIONS = {
     "lead to enrollment": "lead para matrícula",
     "show-up rate": "taxa de presença",
     "activation in 7 days": "ativação em 7 dias",
+    "activation_rate": "taxa de ativação",
+    "engagement_score": "score de engajamento",
+    "retention_proxy": "proxy de retenção",
+    "net_revenue": "receita líquida",
+    "spend": "investimento",
+    "actual_value": "realizado",
+    "target_value": "meta",
+    "target_variation_pct": "variação contra meta",
     "Click rate": "taxa de clique",
     "click rate": "taxa de clique",
 }
@@ -397,7 +405,7 @@ page = st.sidebar.radio(
         "Priorização de leads",
         "Produto e retenção",
         "Histórico e fechamento mensal",
-        "Consultor IA",
+        "Consultor rule-based",
     ],
 )
 
@@ -427,7 +435,7 @@ if page == "Visão executiva":
     kpi_card(cols[3], "LTV/CAC", br_multiple(ltv_cac, 2))
     cols = st.columns(4)
     kpi_card(cols[0], "Payback", f"{br_number(history.payback_months.replace([float('inf')], 0).mean(), 1)} meses")
-    kpi_card(cols[1], "Lead para matrícula", br_pct(safe_div(enrollments, history.leads.sum())))
+    kpi_card(cols[1], "Matrículas", br_number(enrollments, 0))
     kpi_card(cols[2], "ROI", br_pct(safe_div(total_revenue - total_spend, total_spend)))
     kpi_card(cols[3], "Atingimento da receita", br_pct(safe_div(closing.net_revenue_actual.sum(), closing.net_revenue_target.sum())))
 
@@ -698,7 +706,7 @@ elif page == "Histórico e fechamento mensal":
         use_container_width=True,
     )
 
-elif page == "Consultor IA":
+elif page == "Consultor rule-based":
     st.caption("Leitura consultiva rule-based com dados sintéticos. Não usa modelo externo nem afirma causa raiz.")
     st.subheader("Gaps priorizados")
     if gaps.empty:

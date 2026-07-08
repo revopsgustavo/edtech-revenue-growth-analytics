@@ -271,7 +271,23 @@ def build_monthly_closing(history, targets):
     actual["roi_actual"] = actual.apply(lambda r: calculate_roi(r.net_revenue_actual, r.spend_actual), axis=1)
     actual["roas_actual"] = actual.apply(lambda r: calculate_roas(r.net_revenue_actual, r.spend_actual), axis=1)
     actual["ltv_cac_actual"] = actual.apply(lambda r: calculate_ltv_cac(safe_div(r.expected_ltv_actual, r.enrollments_actual), r.cac_actual), axis=1)
-    target_month = targets.groupby("month", as_index=False).sum(numeric_only=True)
+    # Rate and score targets are channel-level benchmarks; monthly closing must average them, not sum them.
+    target_month = targets.groupby("month", as_index=False).agg(
+        target_spend=("target_spend", "sum"),
+        target_leads=("target_leads", "sum"),
+        target_mqls=("target_mqls", "sum"),
+        target_enrollments=("target_enrollments", "sum"),
+        target_net_revenue=("target_net_revenue", "sum"),
+        target_activation_rate=("target_activation_rate", "mean"),
+        target_engagement_score=("target_engagement_score", "mean"),
+        target_retention_proxy=("target_retention_proxy", "mean"),
+        target_expansion_revenue=("target_expansion_revenue", "sum"),
+        target_ltv_cac=("target_ltv_cac", "mean"),
+    )
+    target_month["target_cac"] = target_month.apply(lambda r: calculate_cac(r.target_spend, r.target_enrollments), axis=1)
+    target_month["target_cpl"] = target_month.apply(lambda r: calculate_cpl(r.target_spend, r.target_leads), axis=1)
+    target_month["target_roi"] = target_month.apply(lambda r: calculate_roi(r.target_net_revenue, r.target_spend), axis=1)
+    target_month["target_roas"] = target_month.apply(lambda r: calculate_roas(r.target_net_revenue, r.target_spend), axis=1)
     target_month = target_month.rename(columns={c: c.replace("target_", "") + "_target" for c in target_month.columns if c.startswith("target_")})
     close = actual.merge(target_month, on="month", how="left")
     for metric in METRICS:
