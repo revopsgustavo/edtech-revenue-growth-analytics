@@ -107,6 +107,16 @@ def executive_block(item, title):
         cols[1].markdown(f"**Métrica de acompanhamento:** {display_term(item.get('follow_up_metric', item.get('primary_metric', '')))}")
 
 
+def consultant_priority_block(title, diagnosis, impact, recommendation, owner):
+    with st.container(border=True):
+        st.markdown(f"**{title}**")
+        cols = st.columns(2)
+        cols[0].markdown(f"**Diagnóstico:** {diagnosis}")
+        cols[0].markdown(f"**Impacto:** {impact}")
+        cols[1].markdown(f"**Recomendação:** {recommendation}")
+        cols[1].markdown(f"**Área responsável:** {owner}")
+
+
 def value_fmt(metric, value):
     if metric in {"net_revenue", "spend", "cac", "cpl", "expansion_revenue"}:
         return brl(value)
@@ -302,6 +312,10 @@ TERM_TRANSLATIONS = {
     "ahead": "acima da meta",
     "lead to enrollment": "lead para matrícula",
     "show-up rate": "taxa de presença",
+    "show-up": "presença",
+    "activation rate": "taxa de ativação",
+    "retention proxy": "proxy de retenção",
+    "expansion revenue": "receita de expansão",
     "activation in 7 days": "ativação em 7 dias",
     "activation_rate": "taxa de ativação",
     "engagement_score": "score de engajamento",
@@ -589,7 +603,7 @@ elif page == "Creators e aulas gratuitas":
     )
     cols = st.columns(4)
     kpi_card(cols[0], "Leads por creators", br_number(content.leads_generated.sum(), 0))
-    kpi_card(cols[1], "Show-up médio", br_pct(events.show_up_rate.mean()))
+    kpi_card(cols[1], "Presença média", br_pct(events.show_up_rate.mean()))
     kpi_card(cols[2], "Receita de eventos", brl(events.revenue_generated.sum()))
     kpi_card(cols[3], "Receita por participante", brl(events_view.revenue_per_attendee.mean()))
     executive_chart(px.bar(creator_summary, x="creator_id", y="leads", title="Creators por geração de leads", labels={"creator_id": "Creator", "leads": "Leads"}), y_kind="number")
@@ -637,11 +651,14 @@ elif page == "Produto e retenção":
     executive_chart(px.scatter(expansion, x="upsell_score", y="expected_expansion_revenue", color="current_language", title="Expansão: score vs receita esperada", labels={"upsell_score": "Score de upsell", "expected_expansion_revenue": "Receita de expansão esperada", "current_language": "Idioma atual"}), x_kind="number", y_kind="money")
 
 elif page == "Histórico e fechamento mensal":
-    months = sorted(closing.month.unique())
-    month = st.sidebar.selectbox("Selecionar mês", months, index=len(months) - 1)
+    just = data["variation_justifications"]
+    closing_months = sorted(closing.month.dropna().unique())
+    justification_months = set(just.month.dropna().unique())
+    common_months = [item for item in closing_months if item in justification_months]
+    default_month = common_months[-1] if common_months else closing_months[-1]
+    month = st.sidebar.selectbox("Selecionar mês", closing_months, index=closing_months.index(default_month))
     metric_label = st.sidebar.selectbox("Métrica principal", [friendly_name(item) for item in METRIC_OPTIONS])
     metric = METRIC_OPTIONS[[friendly_name(item) for item in METRIC_OPTIONS].index(metric_label)]
-    just = data["variation_justifications"]
     area_filter = st.sidebar.multiselect("Área", sorted(just.business_area.dropna().unique()))
     problem_filter = st.sidebar.multiselect("Tipo de problema", sorted(just.problem_type.dropna().unique()))
     team_filter = st.sidebar.multiselect("Time responsável", sorted(just.responsible_team.dropna().unique()))
@@ -660,49 +677,56 @@ elif page == "Histórico e fechamento mensal":
     kpi_card(c[0], "Meta do mês", value_fmt(metric, row[f"{metric}_target"]))
     kpi_card(c[1], "Realizado", value_fmt(metric, row[f"{metric}_actual"]))
     kpi_card(c[2], "Variação vs meta", value_fmt(metric, row[f"{metric}_variation_abs"]))
-    kpi_card(c[3], "Variação percentual", br_pct(row[f"{metric}_variation_pct"]))
-    st.caption(f"Status: {display_term(row.target_status)}")
-    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa a validar: {display_term(row.main_variation_driver)}.")
+    kpi_card(c[3], "Status", display_term(row.target_status))
+    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa: {display_term(row.main_variation_driver)}.")
 
     st.divider()
     st.subheader("Diagnóstico da variação")
+    month_variations = just[just.month == month]
     current_variations = variation_view[variation_view.month == month]
-    if current_variations.empty:
-        current_variations = variation_view.head(1)
-    if not current_variations.empty:
+    if month_variations.empty:
+        st.warning("Justificativa não cadastrada para o mês selecionado.")
+    elif current_variations.empty:
+        st.warning("Nenhuma justificativa encontrada para os filtros selecionados.")
+    else:
         main_variation = current_variations.iloc[current_variations["target_variation_pct"].abs().argmax()]
         d = st.columns(4)
         kpi_card(d[0], "Área responsável", display_term(main_variation.business_area))
-        kpi_card(d[1], "Tipo de problema", display_term(main_variation.problem_type))
-        kpi_card(d[2], "Responsável", display_term(main_variation.decision_owner))
-        kpi_card(d[3], "Ritual sugerido", display_term(main_variation.recommended_review_meeting))
+        kpi_card(d[1], "Principal causa", display_term(main_variation.problem_type))
+        kpi_card(d[2], "Próxima ação", display_term(main_variation.action_taken))
+        kpi_card(d[3], "Status", display_term(row.target_status))
 
     st.subheader("Próxima ação e justificativa")
     show = variation_view[(variation_view.month == month) & (variation_view.metric == metric)]
     if show.empty:
-        show = variation_view[variation_view.month == month].head(1)
-    st.dataframe(
-        format_variation_table(
-            show[
-                [
-                    "month",
-                    "metric",
-                    "business_area",
-                    "problem_type",
-                    "actual_value",
-                    "target_value",
-                    "target_variation_abs",
-                    "target_variation_pct",
-                    "analyst_justification",
-                    "action_taken",
-                    "decision_owner",
-                    "recommended_review_meeting",
-                    "follow_up_metric",
+        show = current_variations.head(1)
+    if month_variations.empty:
+        st.warning("Justificativa não cadastrada para o mês selecionado.")
+    elif show.empty:
+        st.warning("Nenhuma próxima ação encontrada para a métrica e filtros selecionados.")
+    else:
+        st.dataframe(
+            format_variation_table(
+                show[
+                    [
+                        "month",
+                        "metric",
+                        "business_area",
+                        "problem_type",
+                        "actual_value",
+                        "target_value",
+                        "target_variation_abs",
+                        "target_variation_pct",
+                        "analyst_justification",
+                        "action_taken",
+                        "decision_owner",
+                        "recommended_review_meeting",
+                        "follow_up_metric",
+                    ]
                 ]
-            ]
-        ),
-        use_container_width=True,
-    )
+            ),
+            use_container_width=True,
+        )
 
     st.divider()
     st.subheader("Histórico")
@@ -723,32 +747,38 @@ elif page == "Histórico e fechamento mensal":
     st.divider()
     st.subheader("Log de variações")
     st.subheader("Variações por área e tipo de problema")
-    area_summary = translate_dataframe(variation_view).groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
-    problem_summary = translate_dataframe(variation_view).groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
-    g1, g2 = st.columns(2)
-    g1.plotly_chart(px.bar(area_summary, x="business_area", y="variations", title="Variações por área", labels={"business_area": "Área de negócio", "variations": "Variações"}), use_container_width=True)
-    g2.plotly_chart(px.bar(problem_summary, x="problem_type", y="problems", title="Problemas por tipo", labels={"problem_type": "Tipo de problema", "problems": "Ocorrências"}), use_container_width=True)
+    if variation_view.empty:
+        st.warning("Nenhuma variação encontrada para os filtros selecionados.")
+    else:
+        area_summary = translate_dataframe(variation_view).groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
+        problem_summary = translate_dataframe(variation_view).groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
+        g1, g2 = st.columns(2)
+        g1.plotly_chart(px.bar(area_summary, x="business_area", y="variations", title="Variações por área", labels={"business_area": "Área de negócio", "variations": "Variações"}), use_container_width=True)
+        g2.plotly_chart(px.bar(problem_summary, x="problem_type", y="problems", title="Problemas por tipo", labels={"problem_type": "Tipo de problema", "problems": "Ocorrências"}), use_container_width=True)
     st.subheader("Log de variações por área")
-    st.dataframe(
-        format_variation_table(
-            variation_view[
-                [
-                    "month",
-                    "metric",
-                    "business_area",
-                    "problem_type",
-                    "actual_value",
-                    "target_value",
-                    "target_variation_pct",
-                    "detected_driver",
-                    "analyst_justification",
-                    "decision_owner",
-                    "follow_up_metric",
+    if variation_view.empty:
+        st.warning("Nenhum registro para exibir nos filtros selecionados.")
+    else:
+        st.dataframe(
+            format_variation_table(
+                variation_view[
+                    [
+                        "month",
+                        "metric",
+                        "business_area",
+                        "problem_type",
+                        "actual_value",
+                        "target_value",
+                        "target_variation_pct",
+                        "detected_driver",
+                        "analyst_justification",
+                        "decision_owner",
+                        "follow_up_metric",
+                    ]
                 ]
-            ]
-        ),
-        use_container_width=True,
-    )
+            ),
+            use_container_width=True,
+        )
 
 elif page == "Consultor rule-based":
     st.caption("Leitura consultiva rule-based com dados sintéticos. Não usa modelo externo nem afirma causa raiz.")
@@ -756,13 +786,31 @@ elif page == "Consultor rule-based":
     if gaps.empty:
         st.info("Execute `python src/consultant_gap_finder.py` para gerar os gaps priorizados.")
     else:
-        priority_titles = [
-            "Prioridade 1 — Eficiência de aquisição",
-            "Prioridade 2 — Presença em aula gratuita",
-            "Prioridade 3 — Conversão final em matrícula",
+        executive_priorities = [
+            {
+                "title": "Prioridade 1 — Eficiência de aquisição",
+                "diagnosis": "Canais de aquisição geram volume, mas parte opera com pressão de CAC e menor eficiência final.",
+                "impact": "Verba concentrada em canais com menor conversão em matrícula reduz produtividade comercial.",
+                "recommendation": "Rebalancear investimento por CAC, LTV/CAC e conversão final.",
+                "owner": "Marketing, Comercial e CRM.",
+            },
+            {
+                "title": "Prioridade 2 — Presença em aula gratuita",
+                "diagnosis": "Queda ou dispersão de presença em aula gratuita reduz intenção e avanço no funil.",
+                "impact": "Menor presença compromete conversão final e aumenta custo por matrícula.",
+                "recommendation": "Otimizar lembretes, cadência CRM e SLA para leads inscritos.",
+                "owner": "CRM, Produto e CX.",
+            },
+            {
+                "title": "Prioridade 3 — Conversão final em matrícula",
+                "diagnosis": "Existe perda entre intenção demonstrada e matrícula ativada.",
+                "impact": "Volume captado não se transforma integralmente em receita.",
+                "recommendation": "Priorizar leads com maior propensão, revisar abordagem comercial e acompanhar matrícula ativada.",
+                "owner": "Comercial, CRM e Liderança de Receita.",
+            },
         ]
-        for title, (_, item) in zip(priority_titles, gaps.head(3).iterrows()):
-            executive_block(item, title)
+        for item in executive_priorities:
+            consultant_priority_block(item["title"], item["diagnosis"], item["impact"], item["recommendation"], item["owner"])
         area_filter = st.multiselect("Filtrar área do gap", sorted(gaps.business_area.dropna().unique()))
         severity_filter = st.multiselect("Filtrar severidade", sorted(gaps.severity.dropna().unique()), format_func=display_term)
         gap_view = gaps.copy()
@@ -847,6 +895,7 @@ elif page == "Consultor rule-based":
         analysis_text = analysis_text.replace("## Historical Performance and Monthly Variation", "## Histórico de performance e variação mensal")
         analysis_text = analysis_text.replace("## Target vs Actual Closing", "## Fechamento: meta vs realizado")
         analysis_text = analysis_text.replace("## Business Area Diagnosis", "## Diagnóstico por área de negócio")
+        analysis_text = display_term(analysis_text)
         st.markdown(analysis_text)
     else:
         st.markdown("Execute `python src/ai_consultant.py`.")
