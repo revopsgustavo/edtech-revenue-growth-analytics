@@ -151,6 +151,42 @@ def score_band(value):
     return "81–100"
 
 
+def build_funnel_view(stages):
+    rows = []
+    lead_volume = next(iter(stages.values()), 0)
+    previous_volume = None
+    non_sequential = False
+    for stage, volume in stages.items():
+        if previous_volume is None:
+            conversion = 1
+            dropoff = 0
+        else:
+            conversion = safe_div(volume, previous_volume)
+            if conversion > 1:
+                non_sequential = True
+            conversion = min(conversion, 1)
+            dropoff = max(1 - conversion, 0)
+        rows.append(
+            {
+                "Etapa": stage,
+                "Volume": volume,
+                "Conversão etapa anterior": conversion,
+                "Drop-off etapa anterior": dropoff,
+                "Conversão acumulada vs Lead": min(safe_div(volume, lead_volume), 1),
+            }
+        )
+        previous_volume = volume
+    return pd.DataFrame(rows), non_sequential
+
+
+def format_funnel_table(df):
+    view = df.copy()
+    view["Volume"] = view["Volume"].map(lambda value: br_number(value, 0))
+    for col in ["Conversão etapa anterior", "Drop-off etapa anterior", "Conversão acumulada vs Lead"]:
+        view[col] = view[col].map(br_pct)
+    return view
+
+
 def value_fmt(metric, value):
     if metric in {"net_revenue", "spend", "cac", "cpl", "expansion_revenue"}:
         return brl(value)
@@ -574,36 +610,46 @@ if page == "Visão executiva":
     executive_chart(px.line(executive_revenue, x="Mês", y=["Realizado", "Meta"], title="Receita líquida: meta vs realizado", labels={"value": "Receita líquida", "variable": "Série"}), y_kind="money")
 
 elif page == "Diagnóstico do funil":
-    stages = {
+    free_class_stages = {
         "Lead": funnel.lead_date.notna().sum(),
         "Inscrição aula": funnel.free_class_registration_date.notna().sum(),
         "Presença": funnel.attendance_date.notna().sum(),
         "Oferta": funnel.offer_date.notna().sum(),
+        "Matrícula": funnel.enrollment_date.notna().sum(),
+        "Ativação": funnel.activation_date.notna().sum(),
+    }
+    sales_stages = {
+        "Lead": funnel.lead_date.notna().sum(),
         "MQL": funnel.mql_date.notna().sum(),
         "Contato": funnel.sales_contact_date.notna().sum(),
         "Trial agendado": funnel.trial_class_date.notna().sum(),
         "Matrícula": funnel.enrollment_date.notna().sum(),
         "Ativação": funnel.activation_date.notna().sum(),
     }
-    df = pd.DataFrame({"stage": list(stages.keys()), "count": list(stages.values())})
-    df["conversion"] = df["count"] / df["count"].shift(1).fillna(df["count"])
-    df["dropoff"] = 1 - df["conversion"]
-    cols = st.columns(4)
-    kpi_card(cols[0], "Leads", br_number(df.loc[df.stage == "Lead", "count"].iloc[0], 0))
-    kpi_card(cols[1], "Matrículas", br_number(df.loc[df.stage == "Matrícula", "count"].iloc[0], 0))
-    kpi_card(cols[2], "Lead para matrícula", br_pct(safe_div(df.loc[df.stage == "Matrícula", "count"].iloc[0], df.loc[df.stage == "Lead", "count"].iloc[0])))
-    kpi_card(cols[3], "Ativação pós-matrícula", br_pct(safe_div(df.loc[df.stage == "Ativação", "count"].iloc[0], df.loc[df.stage == "Matrícula", "count"].iloc[0])))
-    executive_chart(px.funnel(df, x="count", y="stage", title="Funil principal: volume por etapa", labels={"count": "Volume", "stage": "Etapa"}), x_kind="number")
-    st.dataframe(
-        format_table(
-            df,
-            pct_cols=["conversion", "dropoff"],
-            number_cols=["count"],
-            rename={"stage": "Etapa", "count": "Volume", "conversion": "Conversão", "dropoff": "Drop-off"},
-        ),
-        use_container_width=True,
+    free_class_df, free_class_non_sequential = build_funnel_view(free_class_stages)
+    sales_df, sales_non_sequential = build_funnel_view(sales_stages)
+    if free_class_non_sequential or sales_non_sequential:
+        st.warning("Etapas não sequenciais detectadas. Revise a composição do funil.")
+
+    st.subheader("Funil de conversão por jornada")
+    st.caption(
+        "A leitura foi separada por jornada para evitar mistura entre qualificação comercial e participação em aula gratuita. "
+        "Isso torna os gargalos de conversão mais claros e acionáveis."
     )
-    st.info("Gargalos prioritários: inscrição para presença em aula gratuita e trial agendado para trial assistido.")
+    cols = st.columns(4)
+    kpi_card(cols[0], "Leads", br_number(free_class_stages["Lead"], 0))
+    kpi_card(cols[1], "Matrículas", br_number(free_class_stages["Matrícula"], 0))
+    kpi_card(cols[2], "Lead para matrícula", br_pct(safe_div(free_class_stages["Matrícula"], free_class_stages["Lead"])))
+    kpi_card(cols[3], "Ativação pós-matrícula", br_pct(safe_div(free_class_stages["Ativação"], free_class_stages["Matrícula"])))
+
+    st.subheader("Jornada de aula gratuita")
+    executive_chart(px.funnel(free_class_df, x="Volume", y="Etapa", title="Jornada de aula gratuita: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"}), x_kind="number")
+    st.dataframe(format_funnel_table(free_class_df), use_container_width=True, hide_index=True)
+
+    st.subheader("Jornada comercial")
+    executive_chart(px.funnel(sales_df, x="Volume", y="Etapa", title="Jornada comercial: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"}), x_kind="number")
+    st.dataframe(format_funnel_table(sales_df), use_container_width=True, hide_index=True)
+    st.info("Gargalos prioritários: inscrição para presença em aula gratuita e avanço comercial entre MQL, contato e trial agendado.")
 
 elif page == "Performance por canal":
     channels = summarize_channel_performance(history)
