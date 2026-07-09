@@ -117,6 +117,18 @@ def consultant_priority_block(title, diagnosis, impact, recommendation, owner):
         cols[1].markdown(f"**Área responsável:** {owner}")
 
 
+def action_priority_block(item, title):
+    with st.container(border=True):
+        st.markdown(f"**{title}**")
+        cols = st.columns(2)
+        cols[0].markdown(f"**Tipo de problema:** {display_term(item.get('problem_type', ''))}")
+        cols[0].markdown(f"**Impacto esperado:** {display_term(item.get('expected_impact', ''))}")
+        cols[0].markdown(f"**Prioridade:** {display_term(item.get('priority', ''))}")
+        cols[1].markdown(f"**Ação recomendada:** {display_term(item.get('recommended_action', ''))}")
+        cols[1].markdown(f"**Responsável:** {display_term(item.get('owner', ''))}")
+        cols[1].markdown(f"**Status:** {display_term(item.get('status', ''))}")
+
+
 def value_fmt(metric, value):
     if metric in {"net_revenue", "spend", "cac", "cpl", "expansion_revenue"}:
         return brl(value)
@@ -342,6 +354,30 @@ TERM_TRANSLATIONS = {
     "margin_pressure": "Pressão de margem",
     "mixed_driver": "Driver multifuncional",
     "Sales Ops": "Operações Comerciais",
+    "Mixed / Cross-functional": "Misto / Multifuncional",
+    "Sales / Growth": "Comercial / Growth",
+    "Sales / SDR Team": "Comercial / SDR",
+    "SDR Team": "Time de SDR",
+    "CRM / Lifecycle": "CRM / Ciclo de vida",
+    "Creator / Influencer": "Creators / Influenciadores",
+    "Finance / Revenue + Paid Media": "Finanças / Receita + Mídia paga",
+    "Growth / Paid Media": "Growth / Mídia paga",
+    "Revenue / Growth": "Receita / Growth",
+    "Data Engineering / Analytics": "Engenharia de Dados / Analytics",
+    "Content / Events": "Conteúdo / Eventos",
+    "Líder de Sales Ops": "Líder de Operações Comerciais",
+    "Growth Ops": "Operações de Growth",
+    "Data Governance": "Governança de Dados",
+    "Data Lead": "Líder de Dados",
+    "CPL vs conversion": "CPL vs conversão",
+    "CRM-assisted enrollment": "matrícula assistida por CRM",
+    "P1 SLA": "SLA P1",
+    "data completeness": "completude de dados",
+    "free class attendance": "presença em aula gratuita",
+    "leads vs enrollments": "leads vs matrículas",
+    "quality variance": "variação de qualidade",
+    "revenue vs CAC": "receita vs CAC",
+    "trial scheduled to attended": "aula agendada vs presença",
     "Revenue Leadership": "Liderança de Receita",
     "Revenue Governance": "Governança de Receita",
     "Revenue": "Receita",
@@ -380,6 +416,10 @@ def display_term(value):
     for source, target in TERM_TRANSLATIONS.items():
         translated = translated.replace(source, target)
     return translated
+
+
+def sorted_display_options(series):
+    return sorted(series.dropna().unique(), key=lambda value: display_term(value))
 
 
 def translate_dataframe(df):
@@ -659,9 +699,9 @@ elif page == "Histórico e fechamento mensal":
     month = st.sidebar.selectbox("Selecionar mês", closing_months, index=closing_months.index(default_month))
     metric_label = st.sidebar.selectbox("Métrica principal", [friendly_name(item) for item in METRIC_OPTIONS])
     metric = METRIC_OPTIONS[[friendly_name(item) for item in METRIC_OPTIONS].index(metric_label)]
-    area_filter = st.sidebar.multiselect("Área", sorted(just.business_area.dropna().unique()))
-    problem_filter = st.sidebar.multiselect("Tipo de problema", sorted(just.problem_type.dropna().unique()))
-    team_filter = st.sidebar.multiselect("Time responsável", sorted(just.responsible_team.dropna().unique()))
+    area_filter = st.sidebar.multiselect("Área", sorted_display_options(just.business_area), format_func=display_term, placeholder="Selecionar opções")
+    problem_filter = st.sidebar.multiselect("Tipo de problema", sorted_display_options(just.problem_type), format_func=display_term, placeholder="Selecionar opções")
+    team_filter = st.sidebar.multiselect("Time responsável", sorted_display_options(just.responsible_team), format_func=display_term, placeholder="Selecionar opções")
     variation_view = just.copy()
     if area_filter:
         variation_view = variation_view[variation_view.business_area.isin(area_filter)]
@@ -746,22 +786,23 @@ elif page == "Histórico e fechamento mensal":
 
     st.divider()
     st.subheader("Log de variações")
+    log_view = variation_view[variation_view.month == month].copy()
     st.subheader("Variações por área e tipo de problema")
-    if variation_view.empty:
+    if log_view.empty:
         st.warning("Nenhuma variação encontrada para os filtros selecionados.")
     else:
-        area_summary = translate_dataframe(variation_view).groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
-        problem_summary = translate_dataframe(variation_view).groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
+        area_summary = translate_dataframe(log_view).groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
+        problem_summary = translate_dataframe(log_view).groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
         g1, g2 = st.columns(2)
         g1.plotly_chart(px.bar(area_summary, x="business_area", y="variations", title="Variações por área", labels={"business_area": "Área de negócio", "variations": "Variações"}), use_container_width=True)
         g2.plotly_chart(px.bar(problem_summary, x="problem_type", y="problems", title="Problemas por tipo", labels={"problem_type": "Tipo de problema", "problems": "Ocorrências"}), use_container_width=True)
     st.subheader("Log de variações por área")
-    if variation_view.empty:
+    if log_view.empty:
         st.warning("Nenhum registro para exibir nos filtros selecionados.")
     else:
         st.dataframe(
             format_variation_table(
-                variation_view[
+                log_view[
                     [
                         "month",
                         "metric",
@@ -811,8 +852,8 @@ elif page == "Consultor rule-based":
         ]
         for item in executive_priorities:
             consultant_priority_block(item["title"], item["diagnosis"], item["impact"], item["recommendation"], item["owner"])
-        area_filter = st.multiselect("Filtrar área do gap", sorted(gaps.business_area.dropna().unique()))
-        severity_filter = st.multiselect("Filtrar severidade", sorted(gaps.severity.dropna().unique()), format_func=display_term)
+        area_filter = st.multiselect("Filtrar área do gap", sorted_display_options(gaps.business_area), format_func=display_term, placeholder="Selecionar opções")
+        severity_filter = st.multiselect("Filtrar severidade", sorted(gaps.severity.dropna().unique()), format_func=display_term, placeholder="Selecionar opções")
         gap_view = gaps.copy()
         if area_filter:
             gap_view = gap_view[gap_view.business_area.isin(area_filter)]
@@ -839,10 +880,10 @@ elif page == "Consultor rule-based":
         kpi_card(c1, "Total de ações", br_number(len(actions), 0))
         kpi_card(c2, "Ações críticas", br_number(int((actions.priority == "critical").sum()), 0))
         kpi_card(c3, "Responsáveis", br_number(actions.owner.nunique(), 0))
-        area_filter = st.multiselect("Filtrar área", sorted(actions.business_area.dropna().unique()))
-        owner_filter = st.multiselect("Filtrar responsável", sorted(actions.owner.dropna().unique()))
-        status_filter = st.multiselect("Filtrar status", sorted(actions.status.dropna().unique()), format_func=display_term)
-        priority_filter = st.multiselect("Filtrar prioridade", sorted(actions.priority.dropna().unique()), format_func=display_term)
+        area_filter = st.multiselect("Filtrar área", sorted_display_options(actions.business_area), format_func=display_term, placeholder="Selecionar opções")
+        owner_filter = st.multiselect("Filtrar responsável", sorted_display_options(actions.owner), format_func=display_term, placeholder="Selecionar opções")
+        status_filter = st.multiselect("Filtrar status", sorted(actions.status.dropna().unique()), format_func=display_term, placeholder="Selecionar opções")
+        priority_filter = st.multiselect("Filtrar prioridade", sorted(actions.priority.dropna().unique()), format_func=display_term, placeholder="Selecionar opções")
         action_view = actions.copy()
         if area_filter:
             action_view = action_view[action_view.business_area.isin(area_filter)]
@@ -853,7 +894,7 @@ elif page == "Consultor rule-based":
         if priority_filter:
             action_view = action_view[action_view.priority.isin(priority_filter)]
         for idx, item in action_view.head(2).iterrows():
-            executive_block(item, f"Ação prioritária {idx + 1}")
+            action_priority_block(item, f"Ação prioritária {idx + 1}")
         tab_area, tab_priority, tab_status = st.tabs(["Por área", "Por prioridade", "Por status"])
         with tab_area:
             executive_chart(px.bar(translate_dataframe(actions), x="business_area", title="Ações por área", labels={"business_area": "Área de negócio"}), y_kind="number")
