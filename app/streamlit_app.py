@@ -129,6 +129,28 @@ def action_priority_block(item, title):
         cols[1].markdown(f"**Status:** {display_term(item.get('status', ''))}")
 
 
+def first_existing_column(df, candidates):
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def score_band(value):
+    if pd.isna(value):
+        return "Sem score"
+    value = float(value)
+    if value <= 20:
+        return "0–20"
+    if value <= 40:
+        return "21–40"
+    if value <= 60:
+        return "41–60"
+    if value <= 80:
+        return "61–80"
+    return "81–100"
+
+
 def value_fmt(metric, value):
     if metric in {"net_revenue", "spend", "cac", "cpl", "expansion_revenue"}:
         return brl(value)
@@ -688,7 +710,76 @@ elif page == "Produto e retenção":
     kpi_card(cols[2], "Score de engajamento", br_number(engagement.engagement_score.mean(), 1))
     kpi_card(cols[3], "Risco de churn", br_number(students.churn_risk_score.mean(), 1))
     executive_chart(px.histogram(activation, x="classes_watched_7d", title="Ativação em 7 dias: aulas assistidas", labels={"classes_watched_7d": "Aulas assistidas em 7 dias"}), x_kind="number")
-    executive_chart(px.scatter(expansion, x="upsell_score", y="expected_expansion_revenue", color="current_language", title="Expansão: score vs receita esperada", labels={"upsell_score": "Score de upsell", "expected_expansion_revenue": "Receita de expansão esperada", "current_language": "Idioma atual"}), x_kind="number", y_kind="money")
+    st.subheader("Expansão: receita esperada por faixa de score")
+    st.caption("A priorização fica mais clara por faixas: scores altos devem concentrar maior potencial médio ou maior volume financeiro. A leitura executiva é por grupo, não por ponto individual.")
+    score_col = first_existing_column(expansion, ["upsell_score", "score_upsell", "expansion_score", "score"])
+    revenue_col = first_existing_column(expansion, ["expected_expansion_revenue", "expansion_expected_revenue", "expected_revenue", "receita_expansao_esperada"])
+    if score_col is None or revenue_col is None:
+        st.info("Dados de score e receita esperada não disponíveis para esta visualização.")
+    else:
+        band_order = ["0–20", "21–40", "41–60", "61–80", "81–100"]
+        band_rank = {band: index for index, band in enumerate(band_order)}
+        expansion_view = expansion[[score_col, revenue_col]].copy()
+        expansion_view["Faixa de score"] = expansion_view[score_col].map(score_band)
+        band_summary = (
+            expansion_view.groupby("Faixa de score", as_index=False)
+            .agg(
+                Oportunidades=(revenue_col, "size"),
+                **{
+                    "Receita esperada total": (revenue_col, "sum"),
+                    "Receita esperada média": (revenue_col, "mean"),
+                    "Score médio": (score_col, "mean"),
+                },
+            )
+            .assign(_rank=lambda df: df["Faixa de score"].map(band_rank).fillna(len(band_order)))
+            .sort_values("_rank")
+            .drop(columns="_rank")
+        )
+        if band_summary.empty:
+            st.info("Dados de score e receita esperada não disponíveis para esta visualização.")
+        else:
+            chart_view = band_summary.copy()
+            chart_view["Oportunidades formatadas"] = chart_view["Oportunidades"].map(lambda value: br_number(value, 0))
+            chart_view["Receita total formatada"] = chart_view["Receita esperada total"].map(brl)
+            chart_view["Receita média formatada"] = chart_view["Receita esperada média"].map(brl)
+            chart_view["Score médio formatado"] = chart_view["Score médio"].map(lambda value: br_number(value, 1))
+            fig = px.bar(
+                chart_view,
+                x="Faixa de score",
+                y="Receita esperada total",
+                custom_data=["Oportunidades formatadas", "Receita total formatada", "Receita média formatada", "Score médio formatado"],
+                title="Receita esperada total por faixa de score",
+                labels={"Faixa de score": "Faixa de score", "Receita esperada total": "Receita esperada total"},
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "Faixa de score: %{x}<br>"
+                    "Oportunidades: %{customdata[0]}<br>"
+                    "Receita esperada total: %{customdata[1]}<br>"
+                    "Receita esperada média: %{customdata[2]}<br>"
+                    "Score médio: %{customdata[3]}<extra></extra>"
+                )
+            )
+            fig.update_yaxes(rangemode="tozero")
+            apply_axis_ticks(fig, "y", "money")
+            chart(fig)
+            table_view = band_summary.copy()
+            table_view["Oportunidades"] = table_view["Oportunidades"].map(lambda value: br_number(value, 0))
+            table_view["Receita esperada total"] = table_view["Receita esperada total"].map(brl)
+            table_view["Receita esperada média"] = table_view["Receita esperada média"].map(brl)
+            table_view["Score médio"] = table_view["Score médio"].map(lambda value: br_number(value, 1))
+            st.dataframe(
+                table_view[["Faixa de score", "Oportunidades", "Receita esperada total", "Receita esperada média", "Score médio"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            total_band = band_summary.sort_values("Receita esperada total", ascending=False).iloc[0]["Faixa de score"]
+            average_band = band_summary.sort_values("Receita esperada média", ascending=False).iloc[0]["Faixa de score"]
+            st.info(
+                f"Maior potencial financeiro total: {total_band}. "
+                f"Maior potencial médio por oportunidade: {average_band}. "
+                "Recomendação: priorizar cadência comercial e CRM para faixas com maior potencial financeiro, validando elegibilidade antes da abordagem."
+            )
 
 elif page == "Histórico e fechamento mensal":
     just = data["variation_justifications"]
