@@ -40,7 +40,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.title("EdTech Revenue Growth Analytics")
-st.caption("Dashboard executivo com dados sintéticos para Marketing, Growth, Comercial, CX, Produto e Dados.")
+st.caption("Dashboard executivo para análise de funil, eficiência de canais, CAC, LTV/CAC, conversão e oportunidades de receita.")
 
 
 @st.cache_data
@@ -99,11 +99,11 @@ def executive_block(item, title):
     with st.container(border=True):
         st.markdown(f"**{title}**")
         cols = st.columns(2)
-        cols[0].markdown(f"**Problema:** {display_term(item.get('problem_type', item.get('metric', '')))}")
+        cols[0].markdown(f"**Diagnóstico:** {display_term(item.get('problem_type', item.get('metric', '')))}")
         cols[0].markdown(f"**Evidência:** {display_term(item.get('evidence', ''))}")
         cols[0].markdown(f"**Hipótese:** {display_term(item.get('likely_hypothesis', item.get('hypothesis', '')))}")
-        cols[1].markdown(f"**Decisão recomendada:** {display_term(item.get('recommended_action', ''))}")
-        cols[1].markdown(f"**Responsável:** {display_term(item.get('decision_owner', item.get('owner', '')))}")
+        cols[1].markdown(f"**Recomendação:** {display_term(item.get('recommended_action', ''))}")
+        cols[1].markdown(f"**Área responsável:** {display_term(item.get('decision_owner', item.get('owner', '')))}")
         cols[1].markdown(f"**Métrica de acompanhamento:** {display_term(item.get('follow_up_metric', item.get('primary_metric', '')))}")
 
 
@@ -196,6 +196,8 @@ def executive_chart(fig, height=420, x_kind=None, y_kind=None):
     apply_axis_ticks(fig, "x", x_kind)
     apply_axis_ticks(fig, "y", y_kind)
     apply_hover_template(fig, x_kind=x_kind, y_kind=y_kind)
+    if any(getattr(trace, "type", "") in {"bar", "histogram"} for trace in fig.data):
+        fig.update_yaxes(rangemode="tozero")
     chart(fig, height=height)
 
 
@@ -309,6 +311,45 @@ TERM_TRANSLATIONS = {
     "actual_value": "realizado",
     "target_value": "meta",
     "target_variation_pct": "variação contra meta",
+    "target_miss": "Meta não atingida",
+    "acquisition_efficiency": "Eficiência de aquisição",
+    "event_attendance": "Presença em aula gratuita",
+    "funnel_conversion": "Conversão final em matrícula",
+    "sales_sla": "SLA comercial",
+    "campaign_roi": "ROI de campanhas",
+    "content_performance": "Performance de conteúdo",
+    "activation_gap": "Gap de ativação",
+    "engagement_gap": "Gap de engajamento",
+    "retention_risk": "Risco de retenção",
+    "expansion_opportunity": "Oportunidade de expansão",
+    "crm_reactivation": "Reativação CRM",
+    "data_quality": "Qualidade de dados",
+    "pricing_discount": "Preço e desconto",
+    "margin_pressure": "Pressão de margem",
+    "mixed_driver": "Driver multifuncional",
+    "Sales Ops": "Operações Comerciais",
+    "Revenue Leadership": "Liderança de Receita",
+    "Revenue Governance": "Governança de Receita",
+    "Revenue": "Receita",
+    "Paid Media": "Mídia paga",
+    "Organic / Content": "Orgânico / Conteúdo",
+    "Product": "Produto",
+    "Product / CX": "Produto / CX",
+    "CX / Student Success": "CX / Sucesso do Aluno",
+    "Data / Tracking": "Dados / Tracking",
+    "Finance / Revenue": "Finanças / Receita",
+    "Marketing + Sales + CX": "Marketing + Comercial + CX",
+    "Growth": "Marketing",
+    "Sales": "Comercial",
+    "Monthly Business Review": "Ritual mensal de receita",
+    "Weekly Sales Pipeline Review": "Ritual semanal de pipeline comercial",
+    "Sales Ops SLA Review": "Ritual de SLA comercial",
+    "Growth Weekly": "Ritual semanal de Growth",
+    "Product and CX Review": "Ritual de Produto e CX",
+    "CX Health Review": "Ritual de saúde da base",
+    "Retention Review": "Ritual de retenção",
+    "Revenue Expansion Review": "Ritual de expansão de receita",
+    "Data Quality Review": "Ritual de qualidade de dados",
     "Click rate": "taxa de clique",
     "click rate": "taxa de clique",
 }
@@ -393,21 +434,29 @@ activation = data["student_activation"]
 engagement = data["learning_engagement"]
 expansion = data["expansion_opportunities"]
 
-page = st.sidebar.radio(
+selected_page = st.sidebar.radio(
     "Página",
     [
         "Visão executiva",
-        "Diagnóstico do funil",
-        "Performance por canal",
-        "ROI de campanhas",
-        "Creators e aulas gratuitas",
-        "Insights de segmentação",
-        "Priorização de leads",
-        "Produto e retenção",
-        "Histórico e fechamento mensal",
+        "Funil e conversão",
+        "Canais e CAC/LTV",
+        "Campanhas e creators",
+        "Fechamento mensal",
         "Consultor rule-based",
+        "Apêndice analítico",
     ],
 )
+
+page_map = {
+    "Funil e conversão": "Diagnóstico do funil",
+    "Canais e CAC/LTV": "Performance por canal",
+    "Fechamento mensal": "Histórico e fechamento mensal",
+}
+page = page_map.get(selected_page, selected_page)
+if selected_page == "Campanhas e creators":
+    page = st.sidebar.radio("Análise", ["ROI de campanhas", "Creators e aulas gratuitas"])
+if selected_page == "Apêndice analítico":
+    page = st.sidebar.radio("Análise", ["Insights de segmentação", "Priorização de leads", "Produto e retenção"])
 
 if page == "Visão executiva":
     total_revenue = history.net_revenue.sum()
@@ -417,15 +466,14 @@ if page == "Visão executiva":
     ltv_cac = safe_div(history.expected_ltv.sum() / max(enrollments, 1), cac)
 
     st.info(
-        "Os dados sugerem crescimento com oportunidade de melhorar eficiência. "
-        "A decisão principal é separar canais que geram volume de canais que geram matrícula ativada, "
-        "priorizando CAC, LTV/CAC, SLA P1 e ativação."
+        "A operação tem tração de receita, mas parte do investimento está concentrada em canais que geram volume sem eficiência final. "
+        "A recomendação é rebalancear mídia por CAC, LTV/CAC e conversão em matrícula ativada."
     )
     d1, d2, d3, d4 = st.columns(4)
-    kpi_card(d1, "O que aconteceu?", "Receita acima da meta em alguns ciclos, com pressão de eficiência.")
-    kpi_card(d2, "Por que importa?", "Volume sem matrícula ativada pode consumir verba e capacidade comercial.")
-    kpi_card(d3, "Decisão", "Rebalancear canais por receita qualificada, CAC e LTV/CAC.")
-    kpi_card(d4, "Quem age?", "Growth, Sales Ops, CRM, Produto e Revenue Leadership.")
+    kpi_card(d1, "O que aconteceu?", "Receita próxima da meta, com pressão de eficiência em ciclos específicos.")
+    kpi_card(d2, "Por que importa?", "Volume sem matrícula aumenta CAC, consome verba e reduz produtividade comercial.")
+    kpi_card(d3, "Decisão recomendada", "Rebalancear investimento por receita qualificada, CAC, LTV/CAC e conversão final.")
+    kpi_card(d4, "Quem age?", "Marketing, Comercial, CRM, Produto, CX e Liderança de Receita.")
     st.divider()
 
     cols = st.columns(4)
@@ -440,14 +488,10 @@ if page == "Visão executiva":
     kpi_card(cols[3], "Atingimento da receita", br_pct(safe_div(closing.net_revenue_actual.sum(), closing.net_revenue_target.sum())))
 
     st.subheader("Alertas e recomendações")
-    c1, c2 = st.columns(2)
-    with c1:
-        for item in gaps.head(3).evidence if not gaps.empty else []:
-            st.warning(item)
-    with c2:
-        st.success("Priorizar canais com LTV/CAC superior.")
-        st.success("Aplicar SLA P1 e cadência CRM.")
-        st.success("Otimizar show-up de aulas gratuitas.")
+    c1, c2, c3 = st.columns(3)
+    kpi_card(c1, "Risco", "Paid Social concentra volume, mas opera com CAC acima dos canais de intenção.")
+    kpi_card(c2, "Oportunidade", "Referral apresenta LTV/CAC superior e baixo investimento relativo.")
+    kpi_card(c3, "Ação recomendada", "Rebalancear verba e aplicar SLA P1 para leads com maior propensão à matrícula.")
     executive_revenue = closing[["month", "net_revenue_actual", "net_revenue_target"]].rename(
         columns={"month": "Mês", "net_revenue_actual": "Realizado", "net_revenue_target": "Meta"}
     )
@@ -615,10 +659,10 @@ elif page == "Histórico e fechamento mensal":
     c = st.columns(4)
     kpi_card(c[0], "Meta do mês", value_fmt(metric, row[f"{metric}_target"]))
     kpi_card(c[1], "Realizado", value_fmt(metric, row[f"{metric}_actual"]))
-    kpi_card(c[2], "Variação abs.", value_fmt(metric, row[f"{metric}_variation_abs"]))
-    kpi_card(c[3], "Variação %", br_pct(row[f"{metric}_variation_pct"]))
+    kpi_card(c[2], "Variação vs meta", value_fmt(metric, row[f"{metric}_variation_abs"]))
+    kpi_card(c[3], "Variação percentual", br_pct(row[f"{metric}_variation_pct"]))
     st.caption(f"Status: {display_term(row.target_status)}")
-    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}, variação de {br_pct(row[f'{metric}_variation_pct'])}. Os dados sugerem como hipótese de trabalho: {row.main_variation_driver}.")
+    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa a validar: {display_term(row.main_variation_driver)}.")
 
     st.divider()
     st.subheader("Diagnóstico da variação")
@@ -628,12 +672,12 @@ elif page == "Histórico e fechamento mensal":
     if not current_variations.empty:
         main_variation = current_variations.iloc[current_variations["target_variation_pct"].abs().argmax()]
         d = st.columns(4)
-        kpi_card(d[0], "Área associada", main_variation.business_area)
-        kpi_card(d[1], "Tipo de problema", main_variation.problem_type)
-        kpi_card(d[2], "Responsável", main_variation.decision_owner)
-        kpi_card(d[3], "Ritual sugerido", main_variation.recommended_review_meeting)
+        kpi_card(d[0], "Área responsável", display_term(main_variation.business_area))
+        kpi_card(d[1], "Tipo de problema", display_term(main_variation.problem_type))
+        kpi_card(d[2], "Responsável", display_term(main_variation.decision_owner))
+        kpi_card(d[3], "Ritual sugerido", display_term(main_variation.recommended_review_meeting))
 
-    st.subheader("Justificativa de negócio")
+    st.subheader("Próxima ação e justificativa")
     show = variation_view[(variation_view.month == month) & (variation_view.metric == metric)]
     if show.empty:
         show = variation_view[variation_view.month == month].head(1)
@@ -679,8 +723,8 @@ elif page == "Histórico e fechamento mensal":
     st.divider()
     st.subheader("Log de variações")
     st.subheader("Variações por área e tipo de problema")
-    area_summary = variation_view.groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
-    problem_summary = variation_view.groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
+    area_summary = translate_dataframe(variation_view).groupby("business_area", as_index=False).agg(variations=("justification_id", "count"), target_gap=("target_variation_abs", "sum"))
+    problem_summary = translate_dataframe(variation_view).groupby("problem_type", as_index=False).agg(problems=("justification_id", "count"))
     g1, g2 = st.columns(2)
     g1.plotly_chart(px.bar(area_summary, x="business_area", y="variations", title="Variações por área", labels={"business_area": "Área de negócio", "variations": "Variações"}), use_container_width=True)
     g2.plotly_chart(px.bar(problem_summary, x="problem_type", y="problems", title="Problemas por tipo", labels={"problem_type": "Tipo de problema", "problems": "Ocorrências"}), use_container_width=True)
@@ -712,8 +756,13 @@ elif page == "Consultor rule-based":
     if gaps.empty:
         st.info("Execute `python src/consultant_gap_finder.py` para gerar os gaps priorizados.")
     else:
-        for idx, item in gaps.sort_values(["severity", "urgency"], ascending=False).head(3).iterrows():
-            executive_block(item, f"Gap executivo {idx + 1}")
+        priority_titles = [
+            "Prioridade 1 — Eficiência de aquisição",
+            "Prioridade 2 — Presença em aula gratuita",
+            "Prioridade 3 — Conversão final em matrícula",
+        ]
+        for title, (_, item) in zip(priority_titles, gaps.head(3).iterrows()):
+            executive_block(item, title)
         area_filter = st.multiselect("Filtrar área do gap", sorted(gaps.business_area.dropna().unique()))
         severity_filter = st.multiselect("Filtrar severidade", sorted(gaps.severity.dropna().unique()), format_func=display_term)
         gap_view = gaps.copy()
@@ -759,7 +808,7 @@ elif page == "Consultor rule-based":
             executive_block(item, f"Ação prioritária {idx + 1}")
         tab_area, tab_priority, tab_status = st.tabs(["Por área", "Por prioridade", "Por status"])
         with tab_area:
-            executive_chart(px.bar(actions, x="business_area", title="Ações por área", labels={"business_area": "Área de negócio"}), y_kind="number")
+            executive_chart(px.bar(translate_dataframe(actions), x="business_area", title="Ações por área", labels={"business_area": "Área de negócio"}), y_kind="number")
         with tab_priority:
             action_priority = translate_dataframe(actions.copy())
             executive_chart(px.histogram(action_priority, x="priority", title="Ações por prioridade", labels={"priority": "Prioridade"}), y_kind="number")
@@ -780,7 +829,7 @@ elif page == "Consultor rule-based":
         kpi_card(c3, "Responsáveis", br_number(experiments.owner.nunique(), 0))
         tab_area, tab_type, tab_status = st.tabs(["Por área", "Por tipo", "Por status"])
         with tab_area:
-            executive_chart(px.bar(experiments, x="business_area", title="Experimentos por área", labels={"business_area": "Área de negócio"}), y_kind="number")
+            executive_chart(px.bar(translate_dataframe(experiments), x="business_area", title="Experimentos por área", labels={"business_area": "Área de negócio"}), y_kind="number")
         with tab_type:
             executive_chart(px.histogram(experiments, x="experiment_type", title="Experimentos por tipo", labels={"experiment_type": "Tipo de experimento"}), y_kind="number")
         with tab_status:
