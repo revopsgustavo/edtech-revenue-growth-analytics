@@ -417,7 +417,7 @@ TERM_TRANSLATIONS = {
     "Sales / SDR Team": "Comercial / SDR",
     "SDR Team": "Time de SDR",
     "CRM / Lifecycle": "CRM / Ciclo de vida",
-    "Creator / Influencer": "Creators / Influenciadores",
+    "Creator / Influencer": "Criadores / Influenciadores",
     "Finance / Revenue + Paid Media": "Finanças / Receita + Mídia paga",
     "Growth / Paid Media": "Growth / Mídia paga",
     "Revenue / Growth": "Receita / Growth",
@@ -429,6 +429,13 @@ TERM_TRANSLATIONS = {
     "Data Lead": "Líder de Dados",
     "CPL vs conversion": "CPL vs conversão",
     "CRM-assisted enrollment": "matrícula assistida por CRM",
+    "conversion_to_enrollment": "Conversão em matrícula",
+    "revenue_vs_cac": "Receita vs CAC",
+    "quality_variance": "Variação de qualidade",
+    "leads_vs_enrollments": "Leads vs matrículas",
+    "trial_scheduled_to_attended": "Aula agendada vs presença",
+    "free_class_attendance": "Presença em aula gratuita",
+    "data_completeness": "Completude dos dados",
     "P1 SLA": "SLA P1",
     "data completeness": "completude de dados",
     "free class attendance": "presença em aula gratuita",
@@ -438,17 +445,85 @@ TERM_TRANSLATIONS = {
     "trial scheduled to attended": "aula agendada vs presença",
     "Revenue Leadership": "Liderança de Receita",
     "Revenue Governance": "Governança de Receita",
+    "Expected Expansion Revenue": "Receita esperada de expansão",
+    "Expected Revenue": "Receita esperada",
+    "Gross Revenue": "Receita bruta",
+    "Net Revenue": "Receita líquida",
     "Revenue": "Receita",
+    "Paid Search": "Busca paga",
+    "Paid Social": "Social pago",
+    "Organic Search": "Busca orgânica",
+    "Organic Social": "Social orgânico",
+    "Referral": "Indicação",
+    "Creator-led Content": "Conteúdo com criadores",
+    "Free Classes / Events": "Aulas gratuitas / eventos",
+    "Direct": "Direto",
+    "Email": "E-mail",
+    "YouTube": "YouTube",
+    "Instagram": "Instagram",
+    "TikTok": "TikTok",
+    "Influencer": "Influenciadores",
+    "Creators": "Criadores",
+    "Creator": "Criador",
     "Paid Media": "Mídia paga",
     "Organic / Content": "Orgânico / Conteúdo",
+    "Data Engineering": "Engenharia de Dados",
+    "Customer Experience": "Experiência do Cliente",
+    "Commercial": "Comercial",
+    "Lifecycle": "Ciclo de vida",
+    "Content": "Conteúdo",
+    "Events": "Eventos",
+    "Data": "Dados",
+    "Analytics": "Analytics",
+    "CX": "CX",
+    "Marketing": "Marketing",
+    "WhatsApp": "WhatsApp",
     "Product": "Produto",
     "Product / CX": "Produto / CX",
     "CX / Student Success": "CX / Sucesso do Aluno",
     "Data / Tracking": "Dados / Tracking",
     "Finance / Revenue": "Finanças / Receita",
     "Marketing + Sales + CX": "Marketing + Comercial + CX",
-    "Growth": "Marketing",
+    "Growth": "Growth",
     "Sales": "Comercial",
+    "Campaigns": "Campanhas",
+    "Campaign": "Campanha",
+    "Spend": "Investimento",
+    "Investment": "Investimento",
+    "Enrollments": "Matrículas",
+    "Qualified Leads": "Leads qualificados",
+    "Leads": "Leads",
+    "Conversion Rate": "Taxa de conversão",
+    "Conversion": "Conversão",
+    "Cost per Lead": "Custo por lead",
+    "Cost": "Custo",
+    "Channel Group": "Grupo de canal",
+    "Channel": "Canal",
+    "Source": "Origem",
+    "Medium": "Mídia",
+    "Intent": "Intenção",
+    "Show-up": "Presença",
+    "Attendance": "Presença",
+    "Free Class": "Aula gratuita",
+    "Trial Scheduled": "Trial agendado",
+    "Trial": "Aula experimental",
+    "Activated Enrollment": "Matrícula ativada",
+    "Activation": "Ativação",
+    "Retention": "Retenção",
+    "Churn": "Churn",
+    "Upsell": "Upsell",
+    "Expansion": "Expansão",
+    "High": "Alta",
+    "Medium": "Média",
+    "Low": "Baixa",
+    "Open": "Aberto",
+    "In Progress": "Em andamento",
+    "Done": "Concluído",
+    "Blocked": "Bloqueado",
+    "Critical": "Crítico",
+    "Warning": "Atenção",
+    "Opportunity": "Oportunidade",
+    "Risk": "Risco",
     "Monthly Business Review": "Ritual mensal de receita",
     "Weekly Sales Pipeline Review": "Ritual semanal de pipeline comercial",
     "Sales Ops SLA Review": "Ritual de SLA comercial",
@@ -465,7 +540,7 @@ TERM_TRANSLATIONS = {
 
 def display_term(value):
     if pd.isna(value):
-        return value
+        return ""
     text = str(value)
     exact = TERM_TRANSLATIONS.get(text)
     if exact:
@@ -473,7 +548,18 @@ def display_term(value):
     translated = text
     for source, target in TERM_TRANSLATIONS.items():
         translated = translated.replace(source, target)
+    if translated != text:
+        return translated
+    if "_" in text:
+        cleaned = text.replace("_", " ").title()
+        for source, target in TERM_TRANSLATIONS.items():
+            cleaned = cleaned.replace(source, target)
+        return cleaned
     return translated
+
+
+def translate_series(series):
+    return series.apply(display_term)
 
 
 def sorted_display_options(series):
@@ -552,7 +638,7 @@ selected_page = st.sidebar.radio(
         "Visão executiva",
         "Funil e conversão",
         "Canais e CAC/LTV",
-        "Campanhas e creators",
+        "Campanhas e criadores",
         "Fechamento mensal",
         "Consultor rule-based",
         "Apêndice analítico",
@@ -565,8 +651,8 @@ page_map = {
     "Fechamento mensal": "Histórico e fechamento mensal",
 }
 page = page_map.get(selected_page, selected_page)
-if selected_page == "Campanhas e creators":
-    page = st.sidebar.radio("Análise", ["ROI de campanhas", "Creators e aulas gratuitas"])
+if selected_page == "Campanhas e criadores":
+    page = st.sidebar.radio("Análise", ["ROI de campanhas", "Criadores e aulas gratuitas"])
 if selected_page == "Apêndice analítico":
     page = st.sidebar.radio("Análise", ["Insights de segmentação", "Priorização de leads", "Produto e retenção"])
 
@@ -601,8 +687,8 @@ if page == "Visão executiva":
 
     st.subheader("Alertas e recomendações")
     c1, c2, c3 = st.columns(3)
-    kpi_card(c1, "Risco", "Paid Social concentra volume, mas opera com CAC acima dos canais de intenção.")
-    kpi_card(c2, "Oportunidade", "Referral apresenta LTV/CAC superior e baixo investimento relativo.")
+    kpi_card(c1, "Risco", "Social pago concentra volume, mas opera com CAC acima dos canais de intenção.")
+    kpi_card(c2, "Oportunidade", "Indicação apresenta LTV/CAC superior e baixo investimento relativo.")
     kpi_card(c3, "Ação recomendada", "Rebalancear verba e aplicar SLA P1 para leads com maior propensão à matrícula.")
     executive_revenue = closing[["month", "net_revenue_actual", "net_revenue_target"]].rename(
         columns={"month": "Mês", "net_revenue_actual": "Realizado", "net_revenue_target": "Meta"}
@@ -653,22 +739,23 @@ elif page == "Diagnóstico do funil":
 
 elif page == "Performance por canal":
     channels = summarize_channel_performance(history)
+    channels["channel_display"] = translate_series(channels["channel"])
     best_ltv = channels.sort_values("ltv_cac", ascending=False).iloc[0]
     best_revenue = channels.sort_values("net_revenue", ascending=False).iloc[0]
     low_cac = channels[channels.enrollments > 0].sort_values("cac", ascending=True).iloc[0]
     cols = st.columns(3)
-    kpi_card(cols[0], "Maior receita", f"{best_revenue.channel}<br>{brl(best_revenue.net_revenue)}")
-    kpi_card(cols[1], "Melhor LTV/CAC", f"{best_ltv.channel}<br>{br_multiple(best_ltv.ltv_cac, 2)}")
-    kpi_card(cols[2], "Menor CAC", f"{low_cac.channel}<br>{brl(low_cac.cac)}")
-    executive_chart(px.bar(channels, x="channel", y="net_revenue", color="ltv_cac", title="Receita líquida e LTV/CAC por canal", labels={"channel": "Canal", "net_revenue": "Receita líquida", "ltv_cac": "LTV/CAC"}), y_kind="money")
-    executive_chart(px.scatter(channels, x="cac", y="net_revenue", size="leads", color="channel", title="CAC vs receita por canal", labels={"cac": "CAC", "net_revenue": "Receita líquida", "leads": "Leads", "channel": "Canal"}), x_kind="money", y_kind="money")
+    kpi_card(cols[0], "Maior receita", f"{best_revenue.channel_display}<br>{brl(best_revenue.net_revenue)}")
+    kpi_card(cols[1], "Melhor LTV/CAC", f"{best_ltv.channel_display}<br>{br_multiple(best_ltv.ltv_cac, 2)}")
+    kpi_card(cols[2], "Menor CAC", f"{low_cac.channel_display}<br>{brl(low_cac.cac)}")
+    executive_chart(px.bar(channels, x="channel_display", y="net_revenue", color="ltv_cac", title="Receita líquida e LTV/CAC por canal", labels={"channel_display": "Canal", "net_revenue": "Receita líquida", "ltv_cac": "LTV/CAC"}), y_kind="money")
+    executive_chart(px.scatter(channels, x="cac", y="net_revenue", size="leads", color="channel_display", title="Receita vs CAC", labels={"cac": "CAC", "net_revenue": "Receita líquida", "leads": "Leads", "channel_display": "Canal"}), x_kind="money", y_kind="money")
     st.dataframe(
         format_table(
-            channels.sort_values("ltv_cac", ascending=False),
+            channels.drop(columns=["channel"]).sort_values("ltv_cac", ascending=False),
             money_cols=["spend", "net_revenue", "cac", "cpl"],
             pct_cols=["roi"],
             number_cols=["leads", "enrollments"],
-            rename={"channel": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
+            rename={"channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
         ),
         use_container_width=True,
     )
@@ -681,6 +768,8 @@ elif page == "ROI de campanhas":
         net_revenue=("net_revenue", "sum"),
     )
     camp = camp.merge(campaigns[["campaign_id", "campaign_name", "channel"]], on="campaign_id", how="left")
+    camp["channel_display"] = translate_series(camp["channel"])
+    camp["campaign_display"] = camp["campaign_id"].map(display_term)
     camp["cpl"] = camp.spend / camp.leads.replace(0, pd.NA)
     camp["cac"] = camp.spend / camp.enrollments.replace(0, pd.NA)
     camp["roi"] = (camp.net_revenue - camp.spend) / camp.spend.replace(0, pd.NA)
@@ -693,31 +782,32 @@ elif page == "ROI de campanhas":
     kpi_card(cols[0], "Campanhas avaliadas", br_number(len(camp), 0))
     kpi_card(cols[1], "Receita total", brl(camp.net_revenue.sum()))
     kpi_card(cols[2], "ROI médio", br_pct(camp.roi.mean()))
-    executive_chart(px.scatter(camp, x="spend", y="net_revenue", color="channel", size="leads", hover_name="campaign_name", title="Investimento vs receita por campanha", labels={"spend": "Investimento", "net_revenue": "Receita líquida", "channel": "Canal", "leads": "Leads"}), x_kind="money", y_kind="money")
-    table_cols = ["campaign_id", "campaign_name", "channel", "spend", "leads", "enrollments", "net_revenue", "cpl", "cac", "roi", "roas"]
-    rename_campaign = {"campaign_id": "ID", "campaign_name": "Campanha", "channel": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
+    executive_chart(px.scatter(camp, x="spend", y="net_revenue", color="channel_display", size="leads", hover_name="campaign_name", title="Investimento vs receita por campanha", labels={"spend": "Investimento", "net_revenue": "Receita líquida", "channel_display": "Canal", "leads": "Leads"}), x_kind="money", y_kind="money")
+    table_cols = ["campaign_display", "campaign_name", "channel_display", "spend", "leads", "enrollments", "net_revenue", "cpl", "cac", "roi", "roas"]
+    rename_campaign = {"campaign_display": "ID", "campaign_name": "Campanha", "channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
     st.subheader("Campanhas com CPL bom e CAC ruim")
     st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
     st.subheader("Campanhas com CAC bom e escala baixa")
     st.dataframe(format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
 
-elif page == "Creators e aulas gratuitas":
+elif page == "Criadores e aulas gratuitas":
     content["engagement_rate"] = (content.likes + content.comments + content.shares) / content.views.replace(0, pd.NA)
     content["click_rate"] = content.clicks / content.views.replace(0, pd.NA)
     creator_summary = content.groupby("creator_id", as_index=False).agg(leads=("leads_generated", "sum"), views=("views", "sum"), engagement_rate=("engagement_rate", "mean"), click_rate=("click_rate", "mean")).sort_values("leads", ascending=False).head(12)
+    creator_summary["creator_display"] = creator_summary["creator_id"].map(display_term)
     events_view = events.assign(
         revenue_per_attendee=events.revenue_generated / events.attendees.replace(0, pd.NA),
         event_conversion=events.enrollments / events.attendees.replace(0, pd.NA),
     )
     cols = st.columns(4)
-    kpi_card(cols[0], "Leads por creators", br_number(content.leads_generated.sum(), 0))
+    kpi_card(cols[0], "Leads por criadores", br_number(content.leads_generated.sum(), 0))
     kpi_card(cols[1], "Presença média", br_pct(events.show_up_rate.mean()))
     kpi_card(cols[2], "Receita de eventos", brl(events.revenue_generated.sum()))
     kpi_card(cols[3], "Receita por participante", brl(events_view.revenue_per_attendee.mean()))
-    executive_chart(px.bar(creator_summary, x="creator_id", y="leads", title="Creators por geração de leads", labels={"creator_id": "Creator", "leads": "Leads"}), y_kind="number")
+    executive_chart(px.bar(creator_summary, x="creator_display", y="leads", title="Criadores por geração de leads", labels={"creator_display": "Criador", "leads": "Leads"}), y_kind="number")
     executive_chart(px.bar(events, x="event_name", y="show_up_rate", color="revenue_generated", title="Taxa de presença e receita por aula gratuita", labels={"event_name": "Aula gratuita", "show_up_rate": "Taxa de presença", "revenue_generated": "Receita"}), height=500, y_kind="pct")
-    st.subheader("Performance de creators")
-    st.dataframe(format_table(creator_summary, pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_id": "Creator", "leads": "Leads", "views": "Views", "engagement_rate": "Engajamento", "click_rate": "taxa de clique"}), use_container_width=True)
+    st.subheader("Performance de criadores")
+    st.dataframe(format_table(creator_summary.drop(columns=["creator_id"]), pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_display": "Criador", "leads": "Leads", "views": "Visualizações", "engagement_rate": "Engajamento", "click_rate": "Taxa de clique"}), use_container_width=True)
     st.subheader("Performance de aulas gratuitas")
     st.dataframe(format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Taxa de presença", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"}), use_container_width=True)
 
