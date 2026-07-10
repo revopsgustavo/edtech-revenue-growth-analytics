@@ -357,6 +357,7 @@ FRIENDLY_NAMES = {
 COLUMN_LABELS = {
     "Investmento": "Investimento",
     "investment": "Investimento",
+    "Investment": "Investimento",
     "investimento": "Investimento",
     "Investimento": "Investimento",
     "Leads": "Leads",
@@ -645,7 +646,7 @@ def format_br_multiple(value):
 
 def format_channel_table(df):
     out = df.copy()
-    replicated_cols = ["activation_rate", "engagement_score", "retention_proxy", "expected_ltv", "expansion_revenue"]
+    replicated_cols = ["activation_rate", "retention_proxy", "expected_ltv", "expansion_revenue"]
     for col in replicated_cols:
         if col in out.columns and out[col].nunique(dropna=True) <= 1:
             out = out.drop(columns=[col])
@@ -658,6 +659,7 @@ def format_channel_table(df):
         "enrollments",
         "net_revenue",
         "expected_ltv",
+        "engagement_score",
         "expansion_revenue",
         "cpl",
         "cac",
@@ -691,6 +693,15 @@ def format_channel_table(df):
         if col in out.columns:
             out[col] = out[col].apply(format_br_multiple)
     return out
+
+
+def render_table_with_left_align(df, left_align_cols=None, height=None):
+    left_align_cols = left_align_cols or []
+    valid_cols = [col for col in left_align_cols if col in df.columns]
+    styler = df.style
+    if valid_cols:
+        styler = styler.set_properties(subset=valid_cols, **{"text-align": "left"})
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=height)
 
 
 def sorted_display_options(series):
@@ -945,7 +956,8 @@ elif page == "ROI de campanhas":
     st.subheader("Campanhas com CPL bom e CAC ruim")
     st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
     st.subheader("Campanhas com CAC bom e escala baixa")
-    st.dataframe(format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
+    scale_gap_table = format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign)
+    render_table_with_left_align(scale_gap_table, left_align_cols=["Investimento", "Leads"])
 
 elif page == "Criadores e aulas gratuitas":
     content["engagement_rate"] = (content.likes + content.comments + content.shares) / content.views.replace(0, pd.NA)
@@ -967,10 +979,7 @@ elif page == "Criadores e aulas gratuitas":
     st.dataframe(format_table(creator_summary.drop(columns=["creator_id"]), pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_display": "Criador", "leads": "Leads", "views": "Visualizações", "engagement_rate": "Engajamento", "click_rate": "Taxa de clique"}), use_container_width=True)
     st.subheader("Performance de aulas gratuitas")
     free_class_table = format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Taxa de presença", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"})
-    if "Ofertas" in free_class_table.columns:
-        st.dataframe(free_class_table.style.set_properties(subset=["Ofertas"], **{"text-align": "left"}), use_container_width=True)
-    else:
-        st.dataframe(free_class_table, use_container_width=True)
+    render_table_with_left_align(free_class_table, left_align_cols=["Ofertas"])
 
 elif page == "Insights de segmentação":
     seg = leads.merge(funnel[["lead_id", "enrollment_date"]], on="lead_id", how="left")
@@ -1109,7 +1118,13 @@ elif page == "Histórico e fechamento mensal":
     kpi_card(c[1], "Realizado", value_fmt(metric, row[f"{metric}_actual"]))
     kpi_card(c[2], "Variação vs meta", value_fmt(metric, row[f"{metric}_variation_abs"]))
     kpi_card(c[3], "Status", display_term(row.target_status))
-    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa: {principal_cause}.")
+    with st.container(border=True):
+        st.markdown(f"**Resumo do fechamento — {month}**")
+        st.markdown(f"**Indicador:** {friendly_name(metric)}")
+        st.markdown(f"**Realizado:** {value_fmt(metric, row[f'{metric}_actual'])}")
+        st.markdown(f"**Meta:** {value_fmt(metric, row[f'{metric}_target'])}")
+        st.markdown(f"**Variação vs meta:** {format_br_pct(row[f'{metric}_variation_pct'])}")
+        st.markdown(f"**Principal causa:** {principal_cause}")
 
     st.divider()
     st.subheader("Diagnóstico da variação")
