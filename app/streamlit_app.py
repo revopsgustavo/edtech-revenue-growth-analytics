@@ -972,9 +972,18 @@ elif page == "ROI de campanhas":
     table_cols = ["campaign_display", "campaign_name", "channel_display", "spend", "leads", "enrollments", "net_revenue", "cpl", "cac", "roi", "roas"]
     rename_campaign = {"campaign_display": "ID", "campaign_name": "Campanha", "channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
     st.subheader("Campanhas com CPL bom e CAC ruim")
-    st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
+    if bad_quality.empty:
+        st.info("Nenhuma campanha atende simultaneamente aos critérios de CPL baixo e CAC alto no período selecionado.")
+        st.subheader("Campanhas para monitoramento de eficiência")
+        monitoring_table = camp[(camp["cpl"] <= camp["cpl"].median()) & (camp["cac"] >= camp["cac"].median())].sort_values("cac", ascending=False)
+        if monitoring_table.empty:
+            st.info("Nenhuma campanha crítica encontrada para monitoramento neste recorte.")
+        else:
+            st.dataframe(format_table(monitoring_table[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
+    else:
+        st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
     st.subheader("Campanhas com CAC bom e escala baixa")
-    scale_gap_table = format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign)
+    scale_gap_table = format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign)
     render_table_with_left_align(scale_gap_table, left_align_cols=["Investimento", "Leads"])
 
 elif page == "Criadores e aulas gratuitas":
