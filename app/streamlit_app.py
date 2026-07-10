@@ -646,6 +646,10 @@ def format_br_multiple(value):
 
 def format_channel_table(df):
     out = df.copy()
+    for source_col in ["Investment", "investment", "investimento", "spend"]:
+        if source_col in out.columns:
+            out = out.rename(columns={source_col: "Investimento"})
+            break
     replicated_cols = ["activation_rate", "retention_proxy", "expected_ltv", "expansion_revenue"]
     for col in replicated_cols:
         if col in out.columns and out[col].nunique(dropna=True) <= 1:
@@ -653,7 +657,7 @@ def format_channel_table(df):
 
     preferred_order = [
         "channel_display",
-        "spend",
+        "Investimento",
         "leads",
         "mqls",
         "enrollments",
@@ -671,7 +675,10 @@ def format_channel_table(df):
     out = out[ordered_cols + [col for col in out.columns if col not in ordered_cols]]
     out = rename_display_columns(out)
 
-    currency_cols = ["Investimento", "Receita líquida", "LTV esperado", "Receita de expansão", "CPL", "CAC"]
+    if "Investimento" in out.columns:
+        out["Investimento"] = out["Investimento"].apply(format_brl)
+
+    currency_cols = ["Receita líquida", "LTV esperado", "Receita de expansão", "CPL", "CAC"]
     int_cols = ["Leads", "MQLs", "Matrículas"]
     pct_cols = ["Taxa de ativação", "Indicador de retenção", "ROI"]
     score_cols = ["Pontuação de engajamento"]
