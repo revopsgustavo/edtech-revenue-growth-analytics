@@ -705,10 +705,21 @@ def format_channel_table(df):
 def render_table_with_left_align(df, left_align_cols=None, height=None):
     left_align_cols = left_align_cols or []
     valid_cols = [col for col in left_align_cols if col in df.columns]
+
     styler = df.style
+
     if valid_cols:
         styler = styler.set_properties(subset=valid_cols, **{"text-align": "left"})
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=height)
+
+    dataframe_kwargs = {
+        "use_container_width": True,
+        "hide_index": True,
+    }
+
+    if isinstance(height, int) and height > 0:
+        dataframe_kwargs["height"] = height
+
+    st.dataframe(styler, **dataframe_kwargs)
 
 
 def sorted_display_options(series):
