@@ -1006,7 +1006,8 @@ elif page == "Criadores e aulas gratuitas":
     st.dataframe(format_table(creator_summary.drop(columns=["creator_id"]), pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_display": "Criador", "leads": "Leads", "views": "Visualizações", "engagement_rate": "Engajamento", "click_rate": "Taxa de clique"}), use_container_width=True)
     st.subheader("Performance de aulas gratuitas")
     free_class_table = format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Taxa de presença", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"})
-    render_table_with_left_align(free_class_table, left_align_cols=["Ofertas"])
+    free_class_table_styled = free_class_table.style.set_properties(subset=["Ofertas"], **{"text-align": "left"})
+    st.dataframe(free_class_table_styled, use_container_width=True, hide_index=True)
 
 elif page == "Insights de segmentação":
     seg = leads.merge(funnel[["lead_id", "enrollment_date"]], on="lead_id", how="left")
