@@ -601,6 +601,89 @@ def rename_display_columns(df):
     return out
 
 
+def format_brl(value):
+    if pd.isna(value):
+        return ""
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def format_br_int(value):
+    if pd.isna(value):
+        return ""
+    return f"{int(round(value)):,.0f}".replace(",", ".")
+
+
+def format_br_pct(value):
+    if pd.isna(value):
+        return ""
+    value = float(value)
+    if abs(value) <= 1:
+        value = value * 100
+    return f"{value:.1f}%".replace(".", ",")
+
+
+def format_br_decimal(value, casas=1):
+    if pd.isna(value):
+        return ""
+    return f"{float(value):.{casas}f}".replace(".", ",")
+
+
+def format_br_multiple(value):
+    if pd.isna(value):
+        return ""
+    return f"{float(value):.2f}x".replace(".", ",")
+
+
+def format_channel_table(df):
+    out = df.copy()
+    replicated_cols = ["activation_rate", "engagement_score", "retention_proxy", "expected_ltv", "expansion_revenue"]
+    for col in replicated_cols:
+        if col in out.columns and out[col].nunique(dropna=True) <= 1:
+            out = out.drop(columns=[col])
+
+    preferred_order = [
+        "channel_display",
+        "spend",
+        "leads",
+        "mqls",
+        "enrollments",
+        "net_revenue",
+        "expected_ltv",
+        "expansion_revenue",
+        "cpl",
+        "cac",
+        "roi",
+        "roas",
+        "ltv_cac",
+    ]
+    ordered_cols = [col for col in preferred_order if col in out.columns]
+    out = out[ordered_cols + [col for col in out.columns if col not in ordered_cols]]
+    out = rename_display_columns(out)
+
+    currency_cols = ["Investimento", "Receita líquida", "LTV esperado", "Receita de expansão", "CPL", "CAC"]
+    int_cols = ["Leads", "MQLs", "Matrículas"]
+    pct_cols = ["Taxa de ativação", "Indicador de retenção", "ROI"]
+    score_cols = ["Pontuação de engajamento"]
+    multiple_cols = ["LTV/CAC", "ROAS"]
+
+    for col in currency_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(format_brl)
+    for col in int_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(format_br_int)
+    for col in pct_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(format_br_pct)
+    for col in score_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(lambda value: format_br_decimal(value, 1))
+    for col in multiple_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(format_br_multiple)
+    return out
+
+
 def sorted_display_options(series):
     return sorted(series.dropna().unique(), key=lambda value: display_term(value))
 
@@ -788,15 +871,9 @@ elif page == "Performance por canal":
     kpi_card(cols[2], "Menor CAC", f"{low_cac.channel_display}<br>{brl(low_cac.cac)}")
     executive_chart(px.bar(channels, x="channel_display", y="net_revenue", color="ltv_cac", title="Receita líquida e LTV/CAC por canal", labels={"channel_display": "Canal", "net_revenue": "Receita líquida", "ltv_cac": "LTV/CAC"}), y_kind="money")
     executive_chart(px.scatter(channels, x="cac", y="net_revenue", size="leads", color="channel_display", title="Receita vs CAC", labels={"cac": "CAC", "net_revenue": "Receita líquida", "leads": "Leads", "channel_display": "Canal"}), x_kind="money", y_kind="money")
-    channel_table = format_table(
-        channels.drop(columns=["channel"]).sort_values("ltv_cac", ascending=False),
-        money_cols=["spend", "net_revenue", "cac", "cpl"],
-        pct_cols=["roi"],
-        number_cols=["leads", "enrollments"],
-        rename={"channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
-    )
+    channel_table = channels.drop(columns=["channel"]).sort_values("ltv_cac", ascending=False)
     st.dataframe(
-        rename_display_columns(channel_table),
+        format_channel_table(channel_table),
         use_container_width=True,
         hide_index=True,
     )
