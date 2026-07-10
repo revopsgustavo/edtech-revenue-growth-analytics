@@ -977,8 +977,13 @@ elif page == "ROI de campanhas":
         if monitoring_table.empty:
             st.info("Nenhuma campanha atende simultaneamente aos critérios de CPL baixo e CAC alto no período selecionado.")
         else:
+            st.info("Nenhuma campanha atende simultaneamente aos critérios de CPL baixo e CAC alto no período selecionado. Abaixo estão campanhas para monitoramento de eficiência.")
             st.subheader("Campanhas para monitoramento de eficiência")
-            st.dataframe(format_table(monitoring_table[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
+            monitoring_display = format_table(monitoring_table[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign)
+            for col in ["Campanha", "Canal"]:
+                if col in monitoring_display.columns:
+                    monitoring_display[col] = monitoring_display[col].apply(lambda value: "" if pd.isna(value) else str(value).replace("Influenciadoress", "Influenciadores"))
+            st.dataframe(monitoring_display, use_container_width=True, hide_index=True)
     else:
         st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
     st.subheader("Campanhas com CAC bom e escala baixa")
