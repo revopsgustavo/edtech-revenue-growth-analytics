@@ -197,7 +197,7 @@ def value_fmt(metric, value):
     return br_number(value, 2)
 
 
-def format_table(df, money_cols=None, pct_cols=None, number_cols=None, rename=None):
+def format_table(df, money_cols=None, pct_cols=None, number_cols=None, multiple_cols=None, rename=None):
     view = df.copy()
     for col in money_cols or []:
         if col in view.columns:
@@ -208,6 +208,9 @@ def format_table(df, money_cols=None, pct_cols=None, number_cols=None, rename=No
     for col in number_cols or []:
         if col in view.columns:
             view[col] = view[col].map(lambda value: br_number(value, 0))
+    for col in multiple_cols or []:
+        if col in view.columns:
+            view[col] = view[col].map(format_br_multiple)
     if rename:
         view = view.rename(columns=rename)
     return translate_dataframe(view)
@@ -604,13 +607,13 @@ def rename_display_columns(df):
 def format_brl(value):
     if pd.isna(value):
         return ""
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def format_br_int(value):
     if pd.isna(value):
         return ""
-    return f"{int(round(value)):,.0f}".replace(",", ".")
+    return f"{int(round(float(value))):,}".replace(",", ".")
 
 
 def format_br_pct(value):
@@ -626,6 +629,12 @@ def format_br_decimal(value, casas=1):
     if pd.isna(value):
         return ""
     return f"{float(value):.{casas}f}".replace(".", ",")
+
+
+def format_br_score(value):
+    if pd.isna(value):
+        return ""
+    return f"{float(value):.1f}".replace(".", ",")
 
 
 def format_br_multiple(value):
@@ -677,7 +686,7 @@ def format_channel_table(df):
             out[col] = out[col].apply(format_br_pct)
     for col in score_cols:
         if col in out.columns:
-            out[col] = out[col].apply(lambda value: format_br_decimal(value, 1))
+            out[col] = out[col].apply(format_br_score)
     for col in multiple_cols:
         if col in out.columns:
             out[col] = out[col].apply(format_br_multiple)
@@ -735,6 +744,32 @@ def format_closing_history(df, metric):
             f"{metric}_variation_abs": "Variação absoluta",
             f"{metric}_variation_pct": "Variação contra meta",
         }
+    )
+
+
+def build_monthly_fallback(month, metric, row):
+    return pd.DataFrame(
+        [
+            {
+                "justification_id": f"fallback_{month}_{metric}",
+                "month": month,
+                "metric": metric,
+                "business_area": "Revenue Leadership",
+                "problem_type": "Variação do mês sem justificativa detalhada cadastrada.",
+                "actual_value": row[f"{metric}_actual"],
+                "target_value": row[f"{metric}_target"],
+                "target_variation_abs": row[f"{metric}_variation_abs"],
+                "target_variation_pct": row[f"{metric}_variation_pct"],
+                "detected_driver": "Variação do mês sem justificativa detalhada cadastrada.",
+                "analyst_justification": "Variação do mês sem justificativa detalhada cadastrada.",
+                "action_taken": "Registrar causa raiz, responsável e plano de ação no fechamento mensal.",
+                "decision_owner": "Revenue Leadership",
+                "responsible_team": "Revenue Leadership",
+                "recommended_review_meeting": "Monthly Business Review",
+                "follow_up_metric": metric,
+                "status": "Pendente de detalhamento",
+            }
+        ]
     )
 
 
@@ -851,11 +886,15 @@ elif page == "Diagnóstico do funil":
     kpi_card(cols[3], "Ativação pós-matrícula", br_pct(safe_div(free_class_stages["Ativação"], free_class_stages["Matrícula"])))
 
     st.subheader("Jornada de aula gratuita")
-    executive_chart(px.funnel(free_class_df, x="Volume", y="Etapa", title="Jornada de aula gratuita: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"}), x_kind="number")
+    free_class_fig = px.funnel(free_class_df, x="Volume", y="Etapa", title="Jornada de aula gratuita: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"})
+    free_class_fig.update_traces(text=free_class_df["Volume"].map(format_br_int), texttemplate="%{text}", textposition="inside")
+    executive_chart(free_class_fig, x_kind="number")
     st.dataframe(format_funnel_table(free_class_df), use_container_width=True, hide_index=True)
 
     st.subheader("Jornada comercial")
-    executive_chart(px.funnel(sales_df, x="Volume", y="Etapa", title="Jornada comercial: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"}), x_kind="number")
+    sales_fig = px.funnel(sales_df, x="Volume", y="Etapa", title="Jornada comercial: volume por etapa", labels={"Volume": "Volume", "Etapa": "Etapa"})
+    sales_fig.update_traces(text=sales_df["Volume"].map(format_br_int), texttemplate="%{text}", textposition="inside")
+    executive_chart(sales_fig, x_kind="number")
     st.dataframe(format_funnel_table(sales_df), use_container_width=True, hide_index=True)
     st.info("Gargalos prioritários: inscrição para presença em aula gratuita e avanço comercial entre MQL, contato e trial agendado.")
 
@@ -904,9 +943,9 @@ elif page == "ROI de campanhas":
     table_cols = ["campaign_display", "campaign_name", "channel_display", "spend", "leads", "enrollments", "net_revenue", "cpl", "cac", "roi", "roas"]
     rename_campaign = {"campaign_display": "ID", "campaign_name": "Campanha", "channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
     st.subheader("Campanhas com CPL bom e CAC ruim")
-    st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
+    st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
     st.subheader("Campanhas com CAC bom e escala baixa")
-    st.dataframe(format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], rename=rename_campaign), use_container_width=True)
+    st.dataframe(format_table(scale_gap[table_cols], money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
 
 elif page == "Criadores e aulas gratuitas":
     content["engagement_rate"] = (content.likes + content.comments + content.shares) / content.views.replace(0, pd.NA)
@@ -927,7 +966,11 @@ elif page == "Criadores e aulas gratuitas":
     st.subheader("Performance de criadores")
     st.dataframe(format_table(creator_summary.drop(columns=["creator_id"]), pct_cols=["engagement_rate", "click_rate"], number_cols=["leads", "views"], rename={"creator_display": "Criador", "leads": "Leads", "views": "Visualizações", "engagement_rate": "Engajamento", "click_rate": "Taxa de clique"}), use_container_width=True)
     st.subheader("Performance de aulas gratuitas")
-    st.dataframe(format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Taxa de presença", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"}), use_container_width=True)
+    free_class_table = format_table(events_view, money_cols=["revenue_generated", "revenue_per_attendee"], pct_cols=["show_up_rate", "event_conversion"], number_cols=["registrations", "attendees", "enrollments"], rename={"event_id": "ID", "event_name": "Evento", "language_interest": "Idioma", "event_date": "Data", "registrations": "Inscrições", "attendees": "Presentes", "show_up_rate": "Taxa de presença", "offer_presented": "Ofertas", "enrollments": "Matrículas", "revenue_generated": "Receita", "revenue_per_attendee": "Receita por participante", "event_conversion": "Conversão do evento"})
+    if "Ofertas" in free_class_table.columns:
+        st.dataframe(free_class_table.style.set_properties(subset=["Ofertas"], **{"text-align": "left"}), use_container_width=True)
+    else:
+        st.dataframe(free_class_table, use_container_width=True)
 
 elif page == "Insights de segmentação":
     seg = leads.merge(funnel[["lead_id", "enrollment_date"]], on="lead_id", how="left")
@@ -1056,6 +1099,9 @@ elif page == "Histórico e fechamento mensal":
         variation_view = variation_view[variation_view.responsible_team.isin(team_filter)]
 
     row = closing[closing.month == month].iloc[0]
+    month_variations = just[just.month == month]
+    fallback_variation = build_monthly_fallback(month, metric, row)
+    principal_cause = fallback_variation.iloc[0].problem_type if month_variations.empty else display_term(row.main_variation_driver)
     st.subheader("Resultado do mês")
     st.caption(f"Mês analisado: {month} | Métrica analisada: {friendly_name(metric)}")
     c = st.columns(4)
@@ -1063,14 +1109,18 @@ elif page == "Histórico e fechamento mensal":
     kpi_card(c[1], "Realizado", value_fmt(metric, row[f"{metric}_actual"]))
     kpi_card(c[2], "Variação vs meta", value_fmt(metric, row[f"{metric}_variation_abs"]))
     kpi_card(c[3], "Status", display_term(row.target_status))
-    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa: {display_term(row.main_variation_driver)}.")
+    st.info(f"Em {month}, {friendly_name(metric)} teve realizado de {value_fmt(metric, row[f'{metric}_actual'])} contra meta de {value_fmt(metric, row[f'{metric}_target'])}. Variação vs meta: {br_pct(row[f'{metric}_variation_pct'])}. Principal causa: {principal_cause}.")
 
     st.divider()
     st.subheader("Diagnóstico da variação")
-    month_variations = just[just.month == month]
     current_variations = variation_view[variation_view.month == month]
     if month_variations.empty:
-        st.warning("Justificativa não cadastrada para o mês selecionado.")
+        main_variation = fallback_variation.iloc[0]
+        d = st.columns(4)
+        kpi_card(d[0], "Área responsável", display_term(main_variation.business_area))
+        kpi_card(d[1], "Principal causa", display_term(main_variation.problem_type))
+        kpi_card(d[2], "Próxima ação", display_term(main_variation.action_taken))
+        kpi_card(d[3], "Status", display_term(main_variation.status))
     elif current_variations.empty:
         st.warning("Nenhuma justificativa encontrada para os filtros selecionados.")
     else:
@@ -1082,12 +1132,13 @@ elif page == "Histórico e fechamento mensal":
         kpi_card(d[3], "Status", display_term(row.target_status))
 
     st.subheader("Próxima ação e justificativa")
-    show = variation_view[(variation_view.month == month) & (variation_view.metric == metric)]
-    if show.empty:
-        show = current_variations.head(1)
     if month_variations.empty:
-        st.warning("Justificativa não cadastrada para o mês selecionado.")
-    elif show.empty:
+        show = fallback_variation
+    else:
+        show = variation_view[(variation_view.month == month) & (variation_view.metric == metric)]
+        if show.empty:
+            show = current_variations.head(1)
+    if show.empty:
         st.warning("Nenhuma próxima ação encontrada para a métrica e filtros selecionados.")
     else:
         st.dataframe(
@@ -1131,7 +1182,7 @@ elif page == "Histórico e fechamento mensal":
 
     st.divider()
     st.subheader("Log de variações")
-    log_view = variation_view[variation_view.month == month].copy()
+    log_view = fallback_variation.copy() if month_variations.empty else variation_view[variation_view.month == month].copy()
     st.subheader("Variações por área e tipo de problema")
     if log_view.empty:
         st.warning("Nenhuma variação encontrada para os filtros selecionados.")
