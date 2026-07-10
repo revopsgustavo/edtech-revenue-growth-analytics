@@ -973,12 +973,11 @@ elif page == "ROI de campanhas":
     rename_campaign = {"campaign_display": "ID", "campaign_name": "Campanha", "channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cpl": "CPL", "cac": "CAC", "roi": "ROI", "roas": "ROAS"}
     st.subheader("Campanhas com CPL bom e CAC ruim")
     if bad_quality.empty:
-        st.info("Nenhuma campanha atende simultaneamente aos critérios de CPL baixo e CAC alto no período selecionado.")
-        st.subheader("Campanhas para monitoramento de eficiência")
         monitoring_table = camp[(camp["cpl"] <= camp["cpl"].median()) & (camp["cac"] >= camp["cac"].median())].sort_values("cac", ascending=False)
         if monitoring_table.empty:
-            st.info("Nenhuma campanha crítica encontrada para monitoramento neste recorte.")
+            st.info("Nenhuma campanha atende simultaneamente aos critérios de CPL baixo e CAC alto no período selecionado.")
         else:
+            st.subheader("Campanhas para monitoramento de eficiência")
             st.dataframe(format_table(monitoring_table[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
     else:
         st.dataframe(format_table(bad_quality[table_cols].head(10), money_cols=["spend", "net_revenue", "cpl", "cac"], pct_cols=["roi"], number_cols=["leads", "enrollments"], multiple_cols=["roas"], rename=rename_campaign), use_container_width=True)
