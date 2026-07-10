@@ -351,6 +351,39 @@ FRIENDLY_NAMES = {
     "validation_question": "Pergunta de validação",
 }
 
+COLUMN_LABELS = {
+    "Investmento": "Investimento",
+    "investment": "Investimento",
+    "investimento": "Investimento",
+    "Investimento": "Investimento",
+    "Leads": "Leads",
+    "leads": "Leads",
+    "mqls": "MQLs",
+    "MQLs": "MQLs",
+    "enrollments": "Matrículas",
+    "Matrículas": "Matrículas",
+    "net_revenue": "Receita líquida",
+    "Receita líquida": "Receita líquida",
+    "expected_ltv": "LTV esperado",
+    "activation_rate": "Taxa de ativação",
+    "engagement_score": "Pontuação de engajamento",
+    "retention_proxy": "Indicador de retenção",
+    "expansion_revenue": "Receita de expansão",
+    "CPL": "CPL",
+    "cpl": "CPL",
+    "CAC": "CAC",
+    "cac": "CAC",
+    "ROI": "ROI",
+    "roi": "ROI",
+    "ROAS": "ROAS",
+    "roas": "ROAS",
+    "LTV/CAC": "LTV/CAC",
+    "ltv_cac": "LTV/CAC",
+    "channel": "Canal",
+    "channel_display": "Canal",
+    "Canal": "Canal",
+}
+
 METRIC_OPTIONS = [
     "net_revenue",
     "spend",
@@ -562,6 +595,12 @@ def translate_series(series):
     return series.apply(display_term)
 
 
+def rename_display_columns(df):
+    out = df.copy()
+    out.columns = [COLUMN_LABELS.get(col, display_term(col)) for col in out.columns]
+    return out
+
+
 def sorted_display_options(series):
     return sorted(series.dropna().unique(), key=lambda value: display_term(value))
 
@@ -749,15 +788,17 @@ elif page == "Performance por canal":
     kpi_card(cols[2], "Menor CAC", f"{low_cac.channel_display}<br>{brl(low_cac.cac)}")
     executive_chart(px.bar(channels, x="channel_display", y="net_revenue", color="ltv_cac", title="Receita líquida e LTV/CAC por canal", labels={"channel_display": "Canal", "net_revenue": "Receita líquida", "ltv_cac": "LTV/CAC"}), y_kind="money")
     executive_chart(px.scatter(channels, x="cac", y="net_revenue", size="leads", color="channel_display", title="Receita vs CAC", labels={"cac": "CAC", "net_revenue": "Receita líquida", "leads": "Leads", "channel_display": "Canal"}), x_kind="money", y_kind="money")
+    channel_table = format_table(
+        channels.drop(columns=["channel"]).sort_values("ltv_cac", ascending=False),
+        money_cols=["spend", "net_revenue", "cac", "cpl"],
+        pct_cols=["roi"],
+        number_cols=["leads", "enrollments"],
+        rename={"channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
+    )
     st.dataframe(
-        format_table(
-            channels.drop(columns=["channel"]).sort_values("ltv_cac", ascending=False),
-            money_cols=["spend", "net_revenue", "cac", "cpl"],
-            pct_cols=["roi"],
-            number_cols=["leads", "enrollments"],
-            rename={"channel_display": "Canal", "spend": "Investimento", "leads": "Leads", "enrollments": "Matrículas", "net_revenue": "Receita líquida", "cac": "CAC", "cpl": "CPL", "roi": "ROI", "roas": "ROAS", "ltv_cac": "LTV/CAC"},
-        ),
+        rename_display_columns(channel_table),
         use_container_width=True,
+        hide_index=True,
     )
 
 elif page == "ROI de campanhas":
